@@ -39,6 +39,7 @@ dependencies = [
     # Utilities
     "structlog>=24.4.0",
     "python-ulid>=3.0.0",
+    "tenacity>=9.0.0",
 ]
 
 [project.optional-dependencies]

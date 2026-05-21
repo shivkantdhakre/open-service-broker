@@ -39,6 +39,90 @@ class PredictionEngine:
         self._settings = settings
         self._anomaly_detectors: dict[str, IsolationForest] = {}
         self._active_anomalies: dict[str, AnomalyAlert] = {}
+        self._is_warmed_up: bool = False
+
+    async def warm_up(
+        self,
+        metrics_collector: Any,
+        window_hours: int = 24,
+    ) -> dict[str, int]:
+        """Pre-train anomaly detectors from historical metrics.
+
+        Call this on startup to avoid the cold-start problem where
+        IsolationForest detectors have no training data and cannot
+        detect anomalies until enough real-time data accumulates.
+
+        Args:
+            metrics_collector: A MetricsCollector instance with
+                get_all_services() and get_historical_metrics() methods.
+            window_hours: Hours of history to pull for training.
+
+        Returns:
+            Dict mapping service names to the number of data points
+            used for training.
+        """
+        training_report: dict[str, int] = {}
+
+        try:
+            services = await metrics_collector.get_all_services()
+
+            await logger.ainfo(
+                "Cold start warm-up: loading historical metrics",
+                services_found=len(services),
+                window_hours=window_hours,
+            )
+
+            for service_name in services:
+                metrics = await metrics_collector.get_historical_metrics(
+                    service_name,
+                    window_hours=window_hours,
+                )
+
+                if len(metrics) >= 10:
+                    # Train in thread pool to avoid blocking
+                    await asyncio.to_thread(
+                        self.train_anomaly_detector,
+                        service_name,
+                        metrics,
+                    )
+                    training_report[service_name] = len(metrics)
+
+                    await logger.ainfo(
+                        "Anomaly detector trained",
+                        service_name=service_name,
+                        data_points=len(metrics),
+                    )
+                else:
+                    training_report[service_name] = 0
+                    await logger.awarning(
+                        "Insufficient data for warm-up",
+                        service_name=service_name,
+                        data_points=len(metrics),
+                        required=10,
+                    )
+
+            self._is_warmed_up = True
+
+            await logger.ainfo(
+                "Cold start warm-up complete",
+                services_trained=sum(
+                    1 for v in training_report.values() if v > 0
+                ),
+                total_services=len(training_report),
+            )
+
+        except Exception as e:
+            await logger.aerror(
+                "Cold start warm-up failed (non-fatal)",
+                error=str(e),
+            )
+
+        return training_report
+
+    @property
+    def is_warmed_up(self) -> bool:
+        """Whether the engine has been pre-trained with historical data."""
+        return self._is_warmed_up
 
     async def predict(
         self,

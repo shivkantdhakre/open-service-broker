@@ -185,6 +185,9 @@ class Worker:
         1. Update state → PROVISIONING
         2. Apply configuration to Sovereign
         3. Update state → ACTIVE
+
+        Each state transition uses the version returned by the previous
+        update to maintain the optimistic locking chain.
         """
         async with self._session.resource(
             "dynamodb",
@@ -198,7 +201,7 @@ class Worker:
             if resource is None:
                 raise ValueError(f"Resource {resource_id} not found")
 
-            # Transition to PROVISIONING
+            # Transition to PROVISIONING (returns record with incremented version)
             resource = await db.update_state(
                 resource_id=resource.resource_id,
                 resource_type=resource.resource_type,
@@ -225,7 +228,8 @@ class Worker:
                 # Simulate provisioning delay
                 await asyncio.sleep(1)
 
-                # Transition to ACTIVE
+                # Transition to ACTIVE — use resource.version from the
+                # PROVISIONING transition (not the original fetch)
                 await db.update_state(
                     resource_id=resource.resource_id,
                     resource_type=resource.resource_type,
@@ -239,7 +243,7 @@ class Worker:
                 )
 
             except Exception as e:
-                # Transition to FAILED on error
+                # Transition to FAILED on error — use current resource version
                 await db.update_state(
                     resource_id=resource.resource_id,
                     resource_type=resource.resource_type,

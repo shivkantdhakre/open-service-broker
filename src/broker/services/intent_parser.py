@@ -16,6 +16,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from ulid import ULID
 
 from broker.schemas.intent import (
@@ -30,7 +36,7 @@ from broker.schemas.sovereign import (
     RouteConfig,
     WeightedCluster,
 )
-from broker.services.llm_gateway import LLMGateway
+from broker.services.llm_gateway import LLMGateway, LLMParsingError
 from broker.services.safety import SafetyService
 
 logger = structlog.get_logger()
@@ -68,8 +74,8 @@ class IntentParserService:
         # Step 1: Sanitize input
         sanitized_input = self._sanitize_input(natural_language)
 
-        # Step 2: LLM translation
-        parsed_config = await self._llm.parse_intent(sanitized_input, context)
+        # Step 2: LLM translation with resilient retry
+        parsed_config = await self._call_llm_with_retry(sanitized_input, context)
         confidence = await self._llm.get_confidence_score()
 
         await logger.ainfo(
@@ -113,6 +119,40 @@ class IntentParserService:
             warnings=warnings,
             created_at=datetime.now(UTC),
         )
+
+    @retry(
+        retry=retry_if_exception_type(LLMParsingError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def _call_llm_with_retry(
+        self,
+        text: str,
+        context: dict[str, Any] | None,
+    ) -> ParsedConfiguration:
+        """Call the LLM gateway with exponential backoff retry.
+
+        Retries on LLMParsingError (which covers timeouts, rate limits,
+        and transient connection errors). Non-recoverable validation
+        errors from the LLM still raise immediately via the inner
+        retry loop in the gateway itself.
+
+        Args:
+            text: Sanitized natural language input.
+            context: Optional context metadata.
+
+        Returns:
+            Validated ParsedConfiguration from the LLM.
+        """
+        try:
+            return await self._llm.parse_intent(text, context)
+        except LLMParsingError:
+            await logger.awarning(
+                "LLM call failed, tenacity will retry",
+                text_length=len(text),
+            )
+            raise
 
     def _sanitize_input(self, text: str) -> str:
         """Basic input sanitization."""
