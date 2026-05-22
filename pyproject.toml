@@ -52,10 +52,16 @@ dev = [
     "mypy>=1.13.0",
     "moto[dynamodb,sqs]>=5.0.0",
 ]
+cli = [
+    "typer>=0.12.0",
+    "rich>=13.0",
+    "httpx-sse>=0.4.0",
+]
 
 [project.scripts]
 broker-api = "broker.main:run"
 broker-worker = "broker.worker:run"
+osb = "broker.cli.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/broker"]

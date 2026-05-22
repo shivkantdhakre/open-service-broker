@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from broker.config import get_settings
+from broker.middleware.api_key import APIKeyMiddleware
 from broker.middleware.error_handler import register_exception_handlers
 from broker.middleware.logging import StructuredLoggingMiddleware
 from broker.middleware.request_id import RequestIdMiddleware
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(StructuredLoggingMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(APIKeyMiddleware, api_keys=settings.api_keys)
 
     # -- Exception handlers --
     register_exception_handlers(app)

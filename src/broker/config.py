@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     app_port: int = 8000
 
     # -------------------------------------------------------------------------
+    # API Key Authentication
+    # -------------------------------------------------------------------------
+    # JSON dict mapping raw keys → user identities.  Empty dict disables auth.
+    # Example: '{"sk-dev-abc123": "alice@team.com", "sk-ci-xyz": "ci-bot"}'
+    api_keys: dict[str, str] = {}
+
+    # -------------------------------------------------------------------------
     # Predictive Scaling
     # -------------------------------------------------------------------------
     scaling_prediction_horizon_minutes: int = 30
@@ -80,6 +87,16 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, v: Any) -> list[str]:
         """Accept both JSON array strings and Python lists."""
         if isinstance(v, str):
+            return json.loads(v)  # type: ignore[no-any-return]
+        return v  # type: ignore[return-value]
+
+    @field_validator("api_keys", mode="before")
+    @classmethod
+    def parse_api_keys(cls, v: Any) -> dict[str, str]:
+        """Accept both JSON object strings and Python dicts."""
+        if isinstance(v, str):
+            if not v.strip():
+                return {}
             return json.loads(v)  # type: ignore[no-any-return]
         return v  # type: ignore[return-value]
 
