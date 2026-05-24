@@ -114,3 +114,136 @@ def mock_event_bus():
     from broker.services.event_bus import EventBus
 
     return EventBus()
+
+
+@pytest.fixture
+def mock_event_bus():
+    """Provide a fresh event bus for testing."""
+    from broker.services.event_bus import EventBus
+
+    return EventBus()
+
+
+from moto.server import ThreadedMotoServer
+
+@pytest.fixture(scope="session")
+def threaded_moto_server():
+    """Run a local mocked AWS server in a background thread."""
+    server = ThreadedMotoServer(port=0)
+    server.start()
+
+    host = server._server.server_address[0]
+    if host == "0.0.0.0":
+        host = "127.0.0.1"
+    port = server._server.server_address[1]
+    endpoint_url = f"http://{host}:{port}"
+
+    # Wait for the server to become ready
+    import time
+    import urllib.request
+    import urllib.error
+
+    for _ in range(50):
+        try:
+            # Hit the root of the moto server
+            urllib.request.urlopen(endpoint_url)
+            break
+        except urllib.error.URLError:
+            time.sleep(0.1)
+
+    yield endpoint_url
+
+    server.stop()
+
+
+@pytest.fixture
+async def async_dynamodb_service(settings, threaded_moto_server):
+    """Provide a DynamoDBService instance connected to the mocked database."""
+    import aioboto3
+    import os
+    from broker.config import get_settings
+    from broker.services.dynamodb import DynamoDBService
+
+    # Clear config cache and update endpoint env var
+    os.environ["AWS_ENDPOINT_URL"] = threaded_moto_server
+    get_settings.cache_clear()
+
+    # Create the table structure in the mock database
+    client = boto3.client("dynamodb", region_name="us-east-1", endpoint_url=threaded_moto_server)
+    try:
+        client.create_table(
+            TableName=settings.dynamodb_table_name,
+            AttributeDefinitions=[
+                {"AttributeName": "resource_id", "AttributeType": "S"},
+                {"AttributeName": "resource_type", "AttributeType": "S"},
+            ],
+            KeySchema=[
+                {"AttributeName": "resource_id", "KeyType": "HASH"},
+                {"AttributeName": "resource_type", "KeyType": "RANGE"},
+            ],
+            BillingMode="PAY_PER_REQUEST",
+        )
+    except client.exceptions.ResourceInUseException:
+        pass
+
+    session = aioboto3.Session(
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+        region_name="us-east-1",
+    )
+    async with session.resource(
+        "dynamodb",
+        endpoint_url=threaded_moto_server,
+        region_name="us-east-1",
+    ) as dynamodb:
+        yield DynamoDBService(dynamodb, get_settings())
+
+
+@pytest.fixture
+async def async_sqs_service(settings, threaded_moto_server):
+    """Provide an SQSService instance connected to the mocked SQS queue."""
+    import aioboto3
+    import json
+    import os
+    from broker.config import get_settings
+    from broker.services.sqs import SQSService
+
+    # Clear config cache and update env vars
+    os.environ["AWS_ENDPOINT_URL"] = threaded_moto_server
+    os.environ["SQS_QUEUE_URL"] = f"{threaded_moto_server}/000000000000/test-broker-tasks"
+    os.environ["SQS_DLQ_URL"] = f"{threaded_moto_server}/000000000000/test-broker-tasks-dlq"
+    get_settings.cache_clear()
+    current_settings = get_settings()
+
+    client = boto3.client("sqs", region_name="us-east-1", endpoint_url=threaded_moto_server)
+    # Create queue and DLQ in the mock service
+    try:
+        client.create_queue(QueueName="test-broker-tasks-dlq")
+        # Get DLQ ARN
+        dlq_url = client.get_queue_url(QueueName="test-broker-tasks-dlq")["QueueUrl"]
+        attrs = client.get_queue_attributes(QueueUrl=dlq_url, AttributeNames=["QueueArn"])
+        dlq_arn = attrs["Attributes"]["QueueArn"]
+
+        # Create main queue with redrive policy
+        redrive_policy = json.dumps({
+            "deadLetterTargetArn": dlq_arn,
+            "maxReceiveCount": "3"
+        })
+        client.create_queue(
+            QueueName="test-broker-tasks",
+            Attributes={"RedrivePolicy": redrive_policy}
+        )
+    except Exception:
+        pass
+
+    session = aioboto3.Session(
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+        region_name="us-east-1",
+    )
+    async with session.client(
+        "sqs",
+        endpoint_url=threaded_moto_server,
+        region_name="us-east-1",
+    ) as sqs_client:
+        yield SQSService(sqs_client, current_settings)

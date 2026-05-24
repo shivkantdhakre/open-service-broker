@@ -57,11 +57,15 @@ cli = [
     "rich>=13.0",
     "httpx-sse>=0.4.0",
 ]
+ci = [
+    "PyGithub>=2.0",
+]
 
 [project.scripts]
 broker-api = "broker.main:run"
 broker-worker = "broker.worker:run"
 osb = "broker.cli.app:main"
+broker-maintain = "broker.maintain:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/broker"]

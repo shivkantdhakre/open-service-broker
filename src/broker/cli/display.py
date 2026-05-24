@@ -18,8 +18,12 @@ from typing import Any
 # Force UTF-8 on Windows so Rich's box-drawing and emoji render correctly
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    # Enable Windows VT100 mode for ANSI escape sequences
     os.environ.setdefault("PYTHONUTF8", "1")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
 
 
 from rich.console import Console

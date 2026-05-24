@@ -275,20 +275,28 @@ class CodeAnalyzer:
         visited: set[str] = set()
         rec_stack: set[str] = set()
 
+        # Build a resolved dependency graph: file path -> set of file paths
+        resolved_graph: dict[str, set[str]] = defaultdict(set)
+        for node, imports in self._import_graph.items():
+            for imp in imports:
+                for key in self._import_graph:
+                    parts = Path(key).with_suffix("").parts
+                    if imp in parts and key != node:
+                        resolved_graph[node].add(key)
+
         def dfs(node: str, path: list[str]) -> None:
             visited.add(node)
             rec_stack.add(node)
             path.append(node)
 
-            for neighbor in self._import_graph.get(node, set()):
-                if neighbor in self._import_graph:  # Only consider project files
-                    if neighbor not in visited:
-                        dfs(neighbor, path)
-                    elif neighbor in rec_stack:
-                        # Found cycle
-                        cycle_start = path.index(neighbor)
-                        cycle = [*path[cycle_start:], neighbor]
-                        cycles.append(cycle)
+            for neighbor in resolved_graph.get(node, set()):
+                if neighbor not in visited:
+                    dfs(neighbor, path)
+                elif neighbor in rec_stack:
+                    # Found cycle
+                    cycle_start = path.index(neighbor)
+                    cycle = [*path[cycle_start:], neighbor]
+                    cycles.append(cycle)
 
             path.pop()
             rec_stack.discard(node)

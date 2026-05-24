@@ -157,7 +157,6 @@ class DynamoDBService:
             ":new_state": new_state.value,
             ":updated_at": now.isoformat(),
             ":new_version": expected_version + 1,
-            ":expected_version": expected_version,
         }
         expr_names = {"#state": "state"}
 
