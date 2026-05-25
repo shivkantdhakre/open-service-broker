@@ -26,6 +26,7 @@ from broker.middleware.logging import StructuredLoggingMiddleware
 from broker.middleware.request_id import RequestIdMiddleware
 from broker.routers import catalog, events, health, intent, maintenance, resources, scaling
 from broker.services.event_bus import Event, EventBus
+from broker.services.cloudwatch_exporter import CloudWatchMetricsExporter
 
 # ---------------------------------------------------------------------------
 # Structured logging configuration
@@ -167,12 +168,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.edge_sync_task = sync_task
 
+    # Start the CloudWatch metrics exporter background task
+    cw_exporter = CloudWatchMetricsExporter(event_bus, session, settings, interval=60.0)
+    await cw_exporter.start()
+    app.state.cw_exporter = cw_exporter
+
     yield
 
     # Shutdown
     await logger.ainfo("Shutting down Advanced AI Service Broker")
     poller_task.cancel()
     sync_task.cancel()
+    await cw_exporter.stop()
     with contextlib.suppress(asyncio.CancelledError):
         await asyncio.gather(poller_task, sync_task, return_exceptions=True)
     await event_bus.shutdown()

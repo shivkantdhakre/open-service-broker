@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
     app_host: str = "0.0.0.0"
     app_port: int = 8000
+    production_mode: bool = False
+    environment: str = "production"
+    aws_secret_name: str = "open-service-broker-secrets"
 
     # -------------------------------------------------------------------------
     # API Key Authentication
@@ -113,7 +116,67 @@ class Settings(BaseSettings):
         return v  # type: ignore[return-value]
 
 
+def retrieve_secrets_from_manager(secret_name: str, region_name: str) -> dict[str, Any]:
+    """Retrieve secrets from AWS Secrets Manager."""
+    import boto3
+    try:
+        # Create a Secrets Manager client using default credentials chain
+        client = boto3.client(
+            service_name="secretsmanager",
+            region_name=region_name,
+        )
+        response = client.get_secret_value(SecretId=secret_name)
+        if "SecretString" in response:
+            return json.loads(response["SecretString"])  # type: ignore[no-any-return]
+        elif "SecretBinary" in response:
+            import base64
+            decoded = base64.b64decode(response["SecretBinary"]).decode("utf-8")
+            return json.loads(decoded)  # type: ignore[no-any-return]
+    except Exception as e:
+        print(f"Error retrieving secret {secret_name} from region {region_name}: {e}")
+    return {}
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return a cached singleton of application settings."""
-    return Settings()
+    settings = Settings()
+    if settings.production_mode:
+        # Override endpoint URL to None for real AWS connection
+        settings.aws_endpoint_url = None
+        
+        # Retrieve secrets from AWS Secrets Manager
+        secrets = retrieve_secrets_from_manager(settings.aws_secret_name, settings.aws_region)
+        for key, value in secrets.items():
+            key_lower = key.lower()
+            if hasattr(settings, key_lower):
+                # Handle dictionary / list field parsing if stringified in secret
+                if key_lower == "api_keys" and isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except Exception:
+                        pass
+                elif key_lower == "cors_origins" and isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except Exception:
+                        pass
+                
+                # Check annotations and handle type casting if necessary
+                field_type = settings.model_fields[key_lower].annotation
+                if field_type is int:
+                    try:
+                        value = int(value)
+                    except Exception:
+                        pass
+                elif field_type is float:
+                    try:
+                        value = float(value)
+                    except Exception:
+                        pass
+                elif field_type is bool:
+                    if isinstance(value, str):
+                        value = value.lower() in ("true", "1", "yes")
+                
+                setattr(settings, key_lower, value)
+    return settings
