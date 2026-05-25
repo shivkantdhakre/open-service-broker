@@ -152,7 +152,7 @@ def get_settings() -> Settings:
             key_lower = key.lower()
             if hasattr(settings, key_lower):
                 # Handle dictionary / list field parsing if stringified in secret
-                if (key_lower == "api_keys" and isinstance(value, str)) or (key_lower == "cors_origins" and isinstance(value, str)):
+                if key_lower in ("api_keys", "cors_origins") and isinstance(value, str):
                     with contextlib.suppress(Exception):
                         value = json.loads(value)
 
