@@ -402,7 +402,7 @@ def display_sse_heartbeat() -> None:
 def display_health(data: dict[str, Any], endpoint: str = "/health") -> None:
     """Display the health check response."""
     status = data.get("status", "unknown")
-    is_ok = status in ("ok", "healthy")
+    is_ok = status in ("ok", "healthy", "ready")
 
     icon = "✅" if is_ok else "❌"
     style = "osb.success" if is_ok else "osb.error"
@@ -417,16 +417,252 @@ def display_health(data: dict[str, Any], endpoint: str = "/health") -> None:
     for key, value in data.items():
         if key == "status":
             continue
-        table.add_row(
-            key.replace("_", " ").title(),
-            Text(str(value), style="osb.value"),
-        )
+        if key == "checks" and isinstance(value, dict):
+            for sub_key, sub_val in value.items():
+                table.add_row(
+                    f"  ├─ {sub_key.title()}",
+                    Text(str(sub_val), style="osb.success" if sub_val == "ok" else "osb.error"),
+                )
+        else:
+            table.add_row(
+                key.replace("_", " ").title(),
+                Text(str(value), style="osb.value"),
+            )
 
     console.print(
         Panel(
             table,
             title="[osb.brand]💊 Health Check[/]",
             border_style="green" if is_ok else "red",
+            padding=(1, 2),
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Maintenance display helpers
+# ---------------------------------------------------------------------------
+def display_coupling_report(report: dict[str, Any]) -> None:
+    """Display the result of code coupling analysis."""
+    from rich.console import Group
+
+    repo = report.get("repository", "—")
+    total_files = report.get("total_files", 0)
+    total_modules = report.get("total_modules", 0)
+    avg_coupling = report.get("average_coupling", 0.0)
+    hotspots = report.get("hotspots", [])
+    recommendations = report.get("recommendations", [])
+    file_couplings = report.get("file_couplings", [])
+
+    info = Table.grid(padding=(0, 2))
+    info.add_column(style="osb.key", min_width=16)
+    info.add_column()
+    info.add_row("Repository", Text(repo, style="osb.value"))
+    info.add_row("Total Files", Text(str(total_files), style="osb.value"))
+    info.add_row("Total Modules", Text(str(total_modules), style="osb.value"))
+    info.add_row(
+        "Avg Coupling",
+        Text(
+            f"{avg_coupling:.2%}",
+            style="osb.success" if avg_coupling < 0.3 else "osb.warning" if avg_coupling < 0.6 else "osb.error",
+        ),
+    )
+
+    sections: list[Any] = [info]
+
+    # Coupling details table if there are couplings
+    if file_couplings:
+        table = Table(
+            title="File Coupling Details",
+            title_style="bold bright_white",
+            show_lines=False,
+            border_style="dim",
+            header_style="bold bright_white",
+            padding=(0, 1),
+        )
+        table.add_column("File A", style="osb.muted")
+        table.add_column("File B", style="osb.muted")
+        table.add_column("Score", justify="right")
+        table.add_column("Shared Symbols", style="osb.value")
+
+        # Show top 5 couplings
+        for c in file_couplings[:5]:
+            score = c.get("coupling_score", 0.0)
+            score_style = "green" if score < 0.3 else "yellow" if score < 0.6 else "red"
+            symbols = ", ".join(c.get("shared_symbols", []))
+            table.add_row(
+                c.get("file_a", ""),
+                c.get("file_b", ""),
+                Text(f"{score:.0%}", style=score_style),
+                symbols or "—",
+            )
+
+        sections.append(Text(""))
+        sections.append(table)
+        if len(file_couplings) > 5:
+            sections.append(
+                Text(f"  ... and {len(file_couplings) - 5} more coupling pairs.", style="osb.muted")
+            )
+
+    if hotspots:
+        sections.append(Text(""))
+        hotspots_text = Text()
+        for h in hotspots:
+            hotspots_text.append(f"  🔥 {h}\n", style="osb.risky")
+        sections.append(
+            Panel(hotspots_text, title="Hotspots (Highly Coupled)", border_style="red", padding=(0, 1))
+        )
+
+    if recommendations:
+        sections.append(Text(""))
+        rec_text = Text()
+        for r in recommendations:
+            rec_text.append(f"  💡 {r}\n", style="osb.brand")
+        sections.append(
+            Panel(rec_text, title="Recommendations", border_style="bright_cyan", padding=(0, 1))
+        )
+
+    console.print(
+        Panel(
+            Group(*sections),
+            title="[osb.brand]🛠️ Codebase Coupling Analysis[/]",
+            border_style="bright_cyan",
+            padding=(1, 2),
+        )
+    )
+
+
+def display_drift_alerts(alerts: list[dict[str, Any]]) -> None:
+    """Display architectural drift alerts as a rich table."""
+    if not alerts:
+        console.print("[osb.success]✅ No architectural drift detected.[/]")
+        return
+
+    table = Table(
+        title="🚨 Architectural Drift Alerts",
+        title_style="osb.error",
+        show_lines=False,
+        border_style="red",
+        header_style="bold bright_white",
+        padding=(0, 1),
+    )
+    table.add_column("ID", style="osb.muted")
+    table.add_column("Component", style="osb.value")
+    table.add_column("Type", style="osb.value")
+    table.add_column("Severity")
+    table.add_column("Description")
+    table.add_column("Suggested Action", style="osb.success")
+
+    _severity_styles: dict[str, str] = {
+        "LOW": "green",
+        "MEDIUM": "yellow",
+        "HIGH": "bold red",
+        "CRITICAL": "bold red reverse",
+    }
+
+    for alert in alerts:
+        severity = alert.get("severity", "LOW").upper()
+        sev_style = _severity_styles.get(severity, "bright_white")
+        table.add_row(
+            alert.get("alert_id", "—"),
+            alert.get("component", "—"),
+            alert.get("drift_type", "—"),
+            Text(severity, style=sev_style),
+            alert.get("description", "—"),
+            alert.get("suggested_action", "—"),
+        )
+
+    console.print(table)
+
+
+def display_proposals_table(proposals: list[dict[str, Any]]) -> None:
+    """Display pending refactoring proposals."""
+    if not proposals:
+        console.print("[osb.muted]No pending refactoring proposals found.[/]")
+        return
+
+    table = Table(
+        title="💡 Pending Refactor Proposals",
+        title_style="osb.brand",
+        show_lines=False,
+        border_style="bright_cyan",
+        header_style="bold bright_white",
+        padding=(0, 1),
+    )
+    table.add_column("Proposal ID", style="osb.muted", max_width=20)
+    table.add_column("Title", style="osb.value")
+    table.add_column("Affected Files", style="osb.muted")
+    table.add_column("Confidence", justify="right")
+    table.add_column("Effort", style="osb.value")
+    table.add_column("Status")
+
+    for p in proposals:
+        confidence = p.get("confidence", 0.0)
+        conf_style = "green" if confidence >= 0.8 else "yellow" if confidence >= 0.6 else "red"
+        files = ", ".join(p.get("files_affected", []))
+        status = p.get("status", "pending").upper()
+
+        if status == "APPROVED":
+            status_text = Text("APPROVED", style="osb.success")
+        elif status == "PENDING":
+            status_text = Text("PENDING", style="osb.warning")
+        else:
+            status_text = Text(status, style="osb.muted")
+
+        table.add_row(
+            p.get("proposal_id", "—")[:20],
+            p.get("title", "—"),
+            files or "—",
+            Text(f"{confidence:.0%}", style=conf_style),
+            p.get("estimated_effort", "—"),
+            status_text,
+        )
+
+    console.print(table)
+
+
+def display_approved_proposal(proposal: dict[str, Any]) -> None:
+    """Display details of an approved refactor proposal."""
+    from rich.console import Group
+    from rich.syntax import Syntax
+
+    title = proposal.get("title", "—")
+    proposal_id = proposal.get("proposal_id", "—")
+    desc = proposal.get("description", "—")
+    files = ", ".join(proposal.get("files_affected", []))
+    confidence = proposal.get("confidence", 0.0)
+    effort = proposal.get("estimated_effort", "—")
+    diff = proposal.get("diff_preview", "")
+
+    info = Table.grid(padding=(0, 2))
+    info.add_column(style="osb.key", min_width=16)
+    info.add_column()
+    info.add_row("Proposal ID", Text(proposal_id, style="osb.value"))
+    info.add_row("Title", Text(title, style="osb.value"))
+    info.add_row("Description", Text(desc))
+    info.add_row("Affected Files", Text(files, style="osb.value"))
+    info.add_row("Confidence", _confidence_bar(confidence))
+    info.add_row("Est. Effort", Text(effort, style="osb.value"))
+
+    sections: list[Any] = [info]
+
+    if diff:
+        syntax_diff = Syntax(diff, "diff", theme="ansi_dark", word_wrap=True)
+        sections.append(Text(""))
+        sections.append(
+            Panel(
+                syntax_diff,
+                title="Proposed Changes Diff",
+                border_style="bright_cyan",
+                padding=(0, 1),
+            )
+        )
+
+    console.print(
+        Panel(
+            Group(*sections),
+            title="[osb.success]✅ Refactor Proposal Approved for Background PR Generation[/]",
+            border_style="green",
             padding=(1, 2),
         )
     )

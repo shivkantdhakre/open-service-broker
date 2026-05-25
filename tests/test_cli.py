@@ -369,3 +369,160 @@ class TestDisplayHelpers:
                 "created_at": "2026-05-22T10:00:00Z",
             }
         ])
+
+
+# ---------------------------------------------------------------------------
+# Maintenance command tests
+# ---------------------------------------------------------------------------
+MOCK_COUPLING_REPORT: dict[str, Any] = {
+    "repository": "test-repo",
+    "analyzed_at": "2026-05-22T10:00:00Z",
+    "total_files": 10,
+    "total_modules": 2,
+    "file_couplings": [
+        {
+            "file_a": "src/a.py",
+            "file_b": "src/b.py",
+            "coupling_score": 0.85,
+            "shared_symbols": ["helper"],
+            "change_frequency": 5,
+        }
+    ],
+    "average_coupling": 0.42,
+    "hotspots": ["src/a.py"],
+    "recommendations": ["Refactor helper out of a.py"],
+}
+
+MOCK_DRIFT_ALERTS: list[dict[str, Any]] = [
+    {
+        "alert_id": "drift-001",
+        "component": "payments",
+        "drift_type": "CIRCULAR_DEPENDENCY",
+        "severity": "HIGH",
+        "description": "Circular dep between a and b",
+        "suggested_action": "Break cycle",
+        "detected_at": "2026-05-22T10:00:00Z",
+    }
+]
+
+MOCK_PROPOSALS: list[dict[str, Any]] = [
+    {
+        "proposal_id": "prop-001",
+        "title": "Refactor router",
+        "description": "Details about proposal",
+        "files_affected": ["src/router.py"],
+        "diff_preview": "--- a/src/router.py\n+++ b/src/router.py\n@@ -1,2 +1,2 @@\n-old\n+new",
+        "confidence": 0.95,
+        "estimated_effort": "small",
+        "created_at": "2026-05-22T10:00:00Z",
+        "status": "pending",
+    }
+]
+
+
+class TestMaintenanceCommands:
+    """Tests for ``osb maintenance`` subcommands."""
+
+    @patch("broker.cli.app.BrokerAPIClient")
+    def test_maintenance_analyze(self, mock_cls: MagicMock):
+        mock_instance = AsyncMock()
+        mock_instance.analyze_codebase.return_value = MOCK_COUPLING_REPORT
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_instance
+
+        result = runner.invoke(app, ["maintenance", "analyze", "/some/path", "-i", "*.py", "-e", "**/test_*"])
+        assert result.exit_code == 0
+        assert "Coupling" in result.output
+        assert "test-repo" in result.output
+        mock_instance.analyze_codebase.assert_called_once_with(
+            repository_path="/some/path",
+            include_patterns=["*.py"],
+            exclude_patterns=["**/test_*"],
+        )
+
+    @patch("broker.cli.app.BrokerAPIClient")
+    def test_maintenance_analyze_json(self, mock_cls: MagicMock):
+        mock_instance = AsyncMock()
+        mock_instance.analyze_codebase.return_value = MOCK_COUPLING_REPORT
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_instance
+
+        result = runner.invoke(app, ["--json", "maintenance", "analyze"])
+        assert result.exit_code == 0
+        assert "test-repo" in result.output
+        # Check that it parses as JSON (strip ANSI escape characters first)
+        import re
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        plain_output = ansi_escape.sub('', result.output)
+        data = json.loads(plain_output)
+        assert data["repository"] == "test-repo"
+
+    @patch("broker.cli.app.BrokerAPIClient")
+    def test_maintenance_drift(self, mock_cls: MagicMock):
+        mock_instance = AsyncMock()
+        mock_instance.get_drift_alerts.return_value = MOCK_DRIFT_ALERTS
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_instance
+
+        result = runner.invoke(app, ["maintenance", "drift"])
+        assert result.exit_code == 0
+        assert "Drift" in result.output
+        assert "drift-001" in result.output
+
+    @patch("broker.cli.app.BrokerAPIClient")
+    def test_maintenance_proposals(self, mock_cls: MagicMock):
+        mock_instance = AsyncMock()
+        mock_instance.list_proposals.return_value = MOCK_PROPOSALS
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_instance
+
+        result = runner.invoke(app, ["maintenance", "proposals"])
+        assert result.exit_code == 0
+        assert "Proposal" in result.output
+        assert "prop-001" in result.output
+
+    @patch("broker.cli.app.BrokerAPIClient")
+    def test_maintenance_approve(self, mock_cls: MagicMock):
+        mock_instance = AsyncMock()
+        mock_instance.approve_proposal.return_value = MOCK_PROPOSALS[0]
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_instance
+
+        result = runner.invoke(app, ["maintenance", "approve", "prop-001"])
+        assert result.exit_code == 0
+        assert "Approved" in result.output
+        assert "prop-001" in result.output
+        mock_instance.approve_proposal.assert_called_once_with("prop-001")
+
+
+# ---------------------------------------------------------------------------
+# Resilience & Event Stream Hardening tests
+# ---------------------------------------------------------------------------
+class TestResilientEventStreaming:
+    """Tests asserting event stream resilience against HTTPX exceptions."""
+
+    @pytest.mark.asyncio
+    async def test_stream_events_general_httpx_error(self):
+        """stream_events should catch httpx.HTTPError and raise a custom ConnectionError."""
+        import httpx
+        from broker.cli.api_client import BrokerAPIClient, ConnectionError as BrokerConnectionError
+
+        client = AsyncMock()
+        client.stream = MagicMock()
+        # Mock the async context manager to raise an HTTPError when __aenter__ is awaited
+        client.stream.return_value.__aenter__.side_effect = httpx.HTTPError("Some HTTP error")
+
+        api_client = BrokerAPIClient(build_config())
+        api_client._client = client
+
+        with pytest.raises(BrokerConnectionError) as exc_info:
+            async for _ in api_client.stream_events():
+                pass
+
+        assert "Disconnected or cannot connect to event stream" in str(exc_info.value)
+        assert "Some HTTP error" in str(exc_info.value)

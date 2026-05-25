@@ -254,6 +254,34 @@ class BrokerAPIClient:
         """GET /health/ready"""
         return await self._request("GET", "/health/ready")
 
+    # -- Maintenance endpoints -----------------------------------------------
+
+    async def analyze_codebase(
+        self,
+        repository_path: str = ".",
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """POST /api/v1/maintenance/analyze"""
+        payload: dict[str, Any] = {"repository_path": repository_path}
+        if include_patterns is not None:
+            payload["include_patterns"] = include_patterns
+        if exclude_patterns is not None:
+            payload["exclude_patterns"] = exclude_patterns
+        return await self._request("POST", "/api/v1/maintenance/analyze", json_body=payload)
+
+    async def get_drift_alerts(self) -> list[dict[str, Any]]:
+        """GET /api/v1/maintenance/drift"""
+        return await self._request_list("GET", "/api/v1/maintenance/drift")
+
+    async def list_proposals(self) -> list[dict[str, Any]]:
+        """GET /api/v1/maintenance/proposals"""
+        return await self._request_list("GET", "/api/v1/maintenance/proposals")
+
+    async def approve_proposal(self, proposal_id: str) -> dict[str, Any]:
+        """POST /api/v1/maintenance/proposals/{proposal_id}/approve"""
+        return await self._request("POST", f"/api/v1/maintenance/proposals/{proposal_id}/approve")
+
     # -- SSE streaming ------------------------------------------------------
 
     async def stream_events(self) -> AsyncIterator[SSEEvent]:
@@ -299,10 +327,10 @@ class BrokerAPIClient:
                         # SSE comment / heartbeat — skip silently
                         pass
 
-        except httpx.ConnectError as e:
+        except httpx.HTTPError as e:
             raise ConnectionError(
-                f"Cannot connect to event stream at {self._config.base_url}. "
-                "Is the server running?"
+                f"Disconnected or cannot connect to event stream at {self._config.base_url}.\n"
+                f"  ↳ {e}"
             ) from e
 
 

@@ -44,6 +44,10 @@ from broker.cli.display import (
     display_resources_table,
     display_sse_event,
     display_sse_heartbeat,
+    display_coupling_report,
+    display_drift_alerts,
+    display_proposals_table,
+    display_approved_proposal,
 )
 
 # ---------------------------------------------------------------------------
@@ -80,6 +84,13 @@ events_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(events_app, name="events")
+
+maintenance_app = typer.Typer(
+    name="maintenance",
+    help="🛠️ Codebase maintenance — trigger analyses, detect drift, and approve refactoring proposals.",
+    no_args_is_help=True,
+)
+app.add_typer(maintenance_app, name="maintenance")
 
 # ---------------------------------------------------------------------------
 # Shared state (populated by callback)
@@ -384,6 +395,100 @@ def events_watch() -> None:
                         display_sse_event(data, event.event)
             except KeyboardInterrupt:
                 console.print("\n[osb.muted]Disconnected from event stream.[/]")
+
+    _execute(_run)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Maintenance commands
+# ═══════════════════════════════════════════════════════════════════════════
+
+@maintenance_app.command("analyze")
+def maintenance_analyze(
+    repository_path: str = typer.Argument(
+        ".",
+        help="Path to the repository to analyze.",
+    ),
+    include: list[str] | None = typer.Option(
+        None,
+        "--include",
+        "-i",
+        help="File glob pattern to include (multiple allowed).",
+    ),
+    exclude: list[str] | None = typer.Option(
+        None,
+        "--exclude",
+        "-e",
+        help="File glob pattern to exclude (multiple allowed).",
+    ),
+) -> None:
+    """Trigger codebase coupling analysis, drift alerts, and refactoring proposals."""
+    cfg = _get_config()
+
+    async def _run() -> None:
+        async with BrokerAPIClient(cfg) as client:
+            result = await client.analyze_codebase(
+                repository_path=repository_path,
+                include_patterns=include,
+                exclude_patterns=exclude,
+            )
+            if cfg.output_format == "json":
+                display_json(result)
+            else:
+                display_coupling_report(result)
+
+    _execute(_run)
+
+
+@maintenance_app.command("drift")
+def maintenance_drift() -> None:
+    """Retrieve detected architectural drift alerts."""
+    cfg = _get_config()
+
+    async def _run() -> None:
+        async with BrokerAPIClient(cfg) as client:
+            result = await client.get_drift_alerts()
+            if cfg.output_format == "json":
+                display_json(result)
+            else:
+                display_drift_alerts(result)
+
+    _execute(_run)
+
+
+@maintenance_app.command("proposals")
+def maintenance_proposals() -> None:
+    """List pending refactoring proposals."""
+    cfg = _get_config()
+
+    async def _run() -> None:
+        async with BrokerAPIClient(cfg) as client:
+            result = await client.list_proposals()
+            if cfg.output_format == "json":
+                display_json(result)
+            else:
+                display_proposals_table(result)
+
+    _execute(_run)
+
+
+@maintenance_app.command("approve")
+def maintenance_approve(
+    proposal_id: str = typer.Argument(
+        ...,
+        help="The ID of the refactoring proposal to approve.",
+    ),
+) -> None:
+    """Approve a refactoring proposal to generate a branch and pull request."""
+    cfg = _get_config()
+
+    async def _run() -> None:
+        async with BrokerAPIClient(cfg) as client:
+            result = await client.approve_proposal(proposal_id)
+            if cfg.output_format == "json":
+                display_json(result)
+            else:
+                display_approved_proposal(result)
 
     _execute(_run)
 

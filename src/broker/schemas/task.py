@@ -21,6 +21,7 @@ class TaskType(StrEnum):
     DEPROVISION = "deprovision"
     UPDATE_CONFIG = "update_config"
     SCALE = "scale"
+    MAINTENANCE = "maintenance"
 
 
 class TaskMessage(BaseModel):

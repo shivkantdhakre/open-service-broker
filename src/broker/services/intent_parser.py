@@ -34,6 +34,7 @@ from broker.schemas.sovereign import (
     LoadBalancingPolicy,
     RateLimitConfig,
     RouteConfig,
+    RouteMatch,
     WeightedCluster,
 )
 from broker.services.llm_gateway import LLMGateway, LLMParsingError
@@ -180,8 +181,14 @@ class IntentParserService:
                     weighted = [
                         WeightedCluster(**wc) for wc in params["weighted_clusters"]
                     ]
+                match_config = RouteMatch(
+                    prefix=params.get("prefix", "/"),
+                    headers=params.get("headers", {}),
+                    query_parameters=params.get("query_parameters", {}),
+                )
                 return RouteConfig(
                     route_name=params.get("route_name", f"{config.target_service}-route"),
+                    match=match_config,
                     target_cluster=params.get("target_cluster"),
                     weighted_clusters=weighted,
                     timeout_ms=params.get("timeout_ms", 15000),

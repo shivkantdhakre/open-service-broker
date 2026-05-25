@@ -54,6 +54,50 @@ class IntentRequest(BaseModel):
     )
 
 
+from broker.schemas.sovereign import WeightedCluster
+
+class ActionParameters(BaseModel):
+    """Specific parameters parsed by the LLM for Envoy/xDS configuration."""
+
+    route_name: str | None = None
+    target_cluster: str | None = None
+    weighted_clusters: list[WeightedCluster] | None = None
+    timeout_ms: int | None = None
+    retry_on: str | None = None
+    max_retries: int | None = None
+    lb_policy: str | None = None
+    cluster_name: str | None = None
+    name: str | None = None
+    target_route: str | None = None
+    requests_per_unit: int | None = None
+    unit: str | None = None
+    prefix: str | None = None
+    headers: dict[str, str] | None = None
+    query_parameters: dict[str, str] | None = None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Dict-like get method for backwards compatibility."""
+        return self.model_dump(exclude_none=True).get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        """Dict-like __getitem__ method for backwards compatibility."""
+        return self.model_dump(exclude_none=True)[key]
+
+    def __contains__(self, key: str) -> bool:
+        """Dict-like __contains__ method for backwards compatibility."""
+        return key in self.model_dump(exclude_none=True)
+
+    def __iter__(self) -> Any:
+        """Dict-like __iter__ method for backwards compatibility."""
+        return iter(self.model_dump(exclude_none=True))
+
+    def __eq__(self, other: Any) -> bool:
+        """Dict-like __eq__ method for backwards compatibility."""
+        if isinstance(other, dict):
+            return self.model_dump(exclude_none=True) == other
+        return super().__eq__(other)
+
+
 # ---------------------------------------------------------------------------
 # LLM Structured Output (what the LLM must produce)
 # ---------------------------------------------------------------------------
@@ -72,8 +116,8 @@ class ParsedConfiguration(BaseModel):
         ...,
         description="Name of the target service or cluster.",
     )
-    parameters: dict[str, Any] = Field(
-        default_factory=dict,
+    parameters: ActionParameters = Field(
+        default_factory=ActionParameters,
         description="Action-specific parameters (validated per action type downstream).",
     )
     reasoning: str = Field(

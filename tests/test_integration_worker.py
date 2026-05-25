@@ -147,3 +147,102 @@ class TestWorkerIntegration:
                     found = True
                     break
             assert found, f"Expected message 'worker-task-fail' not found in DLQ. Messages: {[m['Body'] for m in dlq_messages]}"
+
+    async def test_worker_maintenance_happy_path(
+        self,
+        integration_worker,
+        async_sqs_service,
+    ):
+        """Verify that worker processes a MAINTENANCE task and triggers Git PR creation."""
+        # 1. Enqueue a MAINTENANCE task
+        task = TaskMessage(
+            task_id="maint-test-001",
+            task_type=TaskType.MAINTENANCE,
+            resource_id="proposal-abc",
+            configuration={
+                "proposal": {
+                    "proposal_id": "proposal-abc",
+                    "title": "Decouple auth and user",
+                    "description": "Refactor auth and user modules",
+                    "files_affected": ["src/auth.py", "src/user.py"],
+                    "diff_preview": "-import auth\n+# refactored",
+                    "confidence": 0.9,
+                    "estimated_effort": "small",
+                },
+                "dry_run": True,
+            },
+        )
+        await async_sqs_service.enqueue_task(task)
+
+        # 2. Process tasks via worker
+        await integration_worker._poll_and_process()
+
+        # 3. Verify task is consumed and deleted
+        depth = await async_sqs_service.get_queue_depth()
+        assert depth == 0
+
+    async def test_worker_maintenance_failure_routes_to_dlq_immediately(
+        self,
+        integration_worker,
+        async_sqs_service,
+    ):
+        """Verify that a failed MAINTENANCE task is routed to the DLQ immediately on the first attempt."""
+        # 1. Enqueue a MAINTENANCE task with dry_run=False (which triggers ValueError due to missing GITHUB_REPO env var)
+        task = TaskMessage(
+            task_id="maint-test-fail",
+            task_type=TaskType.MAINTENANCE,
+            resource_id="proposal-fail",
+            configuration={
+                "proposal": {
+                    "proposal_id": "proposal-fail",
+                    "title": "Decouple database",
+                    "description": "Refactor database module",
+                    "files_affected": ["src/db.py"],
+                    "diff_preview": "-import db\n+# refactored",
+                    "confidence": 0.8,
+                    "estimated_effort": "medium",
+                },
+                "dry_run": False,
+            },
+        )
+        await async_sqs_service.enqueue_task(task)
+
+        # 2. Receive and process task message (approximate_receive_count = 1)
+        messages = await async_sqs_service.receive_tasks(max_messages=1, wait_seconds=1)
+        assert len(messages) == 1
+        msg = messages[0]
+        msg.approximate_receive_count = 1
+
+        # 3. Process the message directly
+        await integration_worker._process_message(async_sqs_service, msg)
+
+        # 4. Verify message was deleted from main queue (routed to DLQ)
+        depth = await async_sqs_service.get_queue_depth()
+        assert depth == 0
+
+        # 5. Verify the message is in the DLQ
+        import aioboto3
+        session = aioboto3.Session(
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+            region_name="us-east-1",
+        )
+        from broker.config import get_settings
+        settings = get_settings()
+        async with session.client(
+            "sqs",
+            endpoint_url=settings.aws_endpoint_url,
+            region_name=settings.aws_region,
+        ) as client:
+            dlq_resp = await client.receive_message(
+                QueueUrl=settings.sqs_dlq_url,
+                MaxNumberOfMessages=10,
+            )
+            dlq_messages = dlq_resp.get("Messages", [])
+            found = False
+            for m in dlq_messages:
+                if "maint-test-fail" in m["Body"]:
+                    assert "GITHUB_REPO env var or repo_name must be set" in m["Body"]
+                    found = True
+                    break
+            assert found, f"Expected failed maintenance task in DLQ"

@@ -272,6 +272,244 @@ class OpenAIGateway(LLMGateway):
 
 
 # ---------------------------------------------------------------------------
+# Schema sanitization helpers for Gemini structured outputs
+# ---------------------------------------------------------------------------
+def _inline_refs(schema_dict: dict, defs: dict | None = None) -> dict:
+    """Recursively inline all ``$ref`` pointers using the top-level ``$defs``."""
+    import copy as _copy
+
+    if not isinstance(schema_dict, dict):
+        return schema_dict
+
+    if defs is None:
+        defs = schema_dict.get("$defs", {})
+
+    if "$ref" in schema_dict:
+        ref_path = schema_dict["$ref"]
+        if ref_path.startswith("#/$defs/"):
+            ref_name = ref_path.split("/")[-1]
+            ref_schema = _inline_refs(_copy.deepcopy(defs[ref_name]), defs)
+            schema_dict.pop("$ref")
+            for k, v in ref_schema.items():
+                if k not in schema_dict:
+                    schema_dict[k] = v
+
+    for key, value in list(schema_dict.items()):
+        if isinstance(value, dict):
+            schema_dict[key] = _inline_refs(value, defs)
+        elif isinstance(value, list):
+            schema_dict[key] = [
+                _inline_refs(item, defs) if isinstance(item, dict) else item
+                for item in value
+            ]
+
+    return schema_dict
+
+
+def _resolve_anyof(schema_dict: dict) -> dict:
+    """Convert ``anyOf: [{type: T}, {type: null}]`` → ``{type: T, nullable: true}``."""
+    if not isinstance(schema_dict, dict):
+        return schema_dict
+
+    if "anyOf" in schema_dict:
+        anyof_list = schema_dict.pop("anyOf")
+        non_null = [s for s in anyof_list if s.get("type") != "null"]
+        if non_null:
+            schema_dict.update(_resolve_anyof(non_null[0]))
+            schema_dict["nullable"] = True
+        else:
+            schema_dict["type"] = "null"
+
+    for key, value in list(schema_dict.items()):
+        if isinstance(value, dict):
+            schema_dict[key] = _resolve_anyof(value)
+        elif isinstance(value, list):
+            schema_dict[key] = [
+                _resolve_anyof(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+
+    return schema_dict
+
+
+_UNSUPPORTED_SCHEMA_KEYS = frozenset({
+    "default", "title",
+    "maximum", "minimum", "exclusiveMaximum", "exclusiveMinimum",
+    "maxLength", "minLength", "pattern",
+    "additionalProperties",
+})
+
+
+def _clean_schema(schema_dict: dict) -> None:
+    """Recursively strip keys that Gemini's protobuf Schema rejects."""
+    if not isinstance(schema_dict, dict):
+        return
+
+    for key in _UNSUPPORTED_SCHEMA_KEYS:
+        schema_dict.pop(key, None)
+
+    for value in schema_dict.values():
+        if isinstance(value, dict):
+            _clean_schema(value)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    _clean_schema(item)
+
+
+def _pydantic_to_gemini_schema(model_cls: type[BaseModel]) -> dict:
+    """Convert a Pydantic model class into a Gemini-compatible JSON schema dict."""
+    schema = model_cls.model_json_schema()
+    schema = _inline_refs(schema)
+    schema.pop("$defs", None)
+    schema = _resolve_anyof(schema)
+    _clean_schema(schema)
+    return schema
+
+
+# ---------------------------------------------------------------------------
+# Gemini Implementation
+# ---------------------------------------------------------------------------
+class GeminiGateway(LLMGateway):
+    """LLM gateway implementation using Google Gemini with structured outputs."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._last_confidence: float = 0.0
+        self._model: Any = None
+
+    def _get_model(self) -> Any:
+        """Lazy-initialize the Gemini GenerativeModel."""
+        if self._model is None:
+            import google.generativeai as genai
+
+            genai.configure(api_key=self._settings.llm_api_key)
+
+            response_schema = _pydantic_to_gemini_schema(ParsedConfiguration)
+
+            generation_config = genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=response_schema,
+                temperature=self._settings.llm_temperature,
+                max_output_tokens=self._settings.llm_max_tokens,
+            )
+
+            self._model = genai.GenerativeModel(
+                model_name=self._settings.llm_model,
+                generation_config=generation_config,
+                system_instruction=INTENT_SYSTEM_PROMPT,
+            )
+        return self._model
+
+    async def parse_intent(
+        self,
+        text: str,
+        context: dict[str, Any] | None = None,
+    ) -> ParsedConfiguration:
+        """Parse natural language into structured config using Gemini."""
+        import asyncio
+
+        model = self._get_model()
+
+        # Build the user message with context if provided
+        user_message = f"Developer request: {text}"
+        if context:
+            user_message += f"\n\nContext: {json.dumps(context)}"
+
+        # Build few-shot conversation turns
+        contents: list[dict[str, Any]] = []
+        for example in INTENT_FEW_SHOT_EXAMPLES:
+            contents.append({"role": "user", "parts": [f"Developer request: {example['input']}"]})
+            contents.append({"role": "model", "parts": [json.dumps(example["output"])]})
+        contents.append({"role": "user", "parts": [user_message]})
+
+        # Retry loop for structured output
+        max_retries = 3
+        last_error: Exception | None = None
+
+        for attempt in range(max_retries):
+            try:
+                # google-generativeai SDK is synchronous; run in a thread
+                response = await asyncio.to_thread(model.generate_content, contents)
+
+                raw_content = response.text
+                if not raw_content:
+                    raise LLMParsingError("Gemini returned empty response")
+
+                await logger.ainfo(
+                    "Gemini raw response",
+                    attempt=attempt + 1,
+                    content_length=len(raw_content),
+                )
+
+                # Parse and validate against our schema
+                parsed_data = json.loads(raw_content)
+                config = ParsedConfiguration.model_validate(parsed_data)
+
+                # Estimate confidence
+                self._last_confidence = self._estimate_confidence(config, text)
+
+                return config
+
+            except (json.JSONDecodeError, ValidationError) as e:
+                last_error = e
+                await logger.awarning(
+                    "Gemini output validation failed, retrying",
+                    attempt=attempt + 1,
+                    error=str(e),
+                )
+                # Append self-correction feedback
+                contents.append({
+                    "role": "user",
+                    "parts": [(
+                        f"Your previous response was invalid: {e}. "
+                        "Please try again with valid JSON matching the schema."
+                    )],
+                })
+                continue
+            except Exception as e:
+                last_error = e
+                await logger.aerror(
+                    "Gemini API call failed",
+                    attempt=attempt + 1,
+                    error=str(e),
+                )
+                if attempt == max_retries - 1:
+                    break
+                continue
+
+        raise LLMParsingError(
+            f"Failed to parse intent after {max_retries} attempts: {last_error}",
+            raw_output=None,
+        )
+
+    async def get_confidence_score(self) -> float:
+        """Return confidence score of the last parse."""
+        return self._last_confidence
+
+    def _estimate_confidence(self, config: ParsedConfiguration, original: str) -> float:
+        """Heuristic confidence estimation based on output quality signals."""
+        score = 0.7  # Base confidence for valid structured output
+
+        well_known_actions = {
+            IntentAction.CREATE_ROUTE,
+            IntentAction.UPDATE_ROUTE,
+            IntentAction.UPDATE_RATE_LIMIT,
+            IntentAction.CONFIGURE_LOAD_BALANCING,
+        }
+        if config.action in well_known_actions:
+            score += 0.1
+
+        if len(config.reasoning) > 30:
+            score += 0.1
+
+        if config.parameters:
+            score += 0.1
+
+        return min(score, 1.0)
+
+
+# ---------------------------------------------------------------------------
 # Stub Gateway (for testing without LLM API)
 # ---------------------------------------------------------------------------
 class StubLLMGateway(LLMGateway):
@@ -289,7 +527,7 @@ class StubLLMGateway(LLMGateway):
         return ParsedConfiguration(
             action=IntentAction.CREATE_ROUTE,
             target_service="stub-service",
-            parameters={"route_name": "stub-route", "prefix": "/"},
+            parameters={"route_name": "stub-route", "prefix": "/users", "target_cluster": "stub-cluster"},
             reasoning=f"Stub response for: {text}",
         )
 
@@ -306,11 +544,13 @@ def create_llm_gateway(settings: Settings) -> LLMGateway:
 
     if provider == "openai":
         return OpenAIGateway(settings)
+    elif provider == "gemini":
+        return GeminiGateway(settings)
     elif provider == "stub":
         logging.getLogger(__name__).warning("Using stub LLM gateway — not for production!")
         return StubLLMGateway()
     else:
         raise ValueError(
             f"Unsupported LLM provider: {provider}. "
-            "Supported providers: openai, stub"
+            "Supported providers: openai, gemini, stub"
         )

@@ -83,6 +83,21 @@ services:
       - AWS_DEFAULT_REGION=us-east-1
 
   # ---------------------------------------------------------------------------
+  # Mock Sovereign — Envoy Control Plane Mock
+  # ---------------------------------------------------------------------------
+  mock-sovereign:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    ports:
+      - "8080:8080"
+    environment:
+      - ENTRYPOINT_MODE=custom
+    command: ["python", "-m", "broker.mock_sovereign"]
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
   # Broker API — FastAPI application gateway
   # ---------------------------------------------------------------------------
   broker-api:
@@ -95,10 +110,13 @@ services:
     env_file: .env
     environment:
       - AWS_ENDPOINT_URL=http://localstack:4566
+      - SOVEREIGN_API_URL=http://mock-sovereign:8080
       - ENTRYPOINT_MODE=api
     depends_on:
       init-aws:
         condition: service_completed_successfully
+      mock-sovereign:
+        condition: service_started
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -112,10 +130,13 @@ services:
     env_file: .env
     environment:
       - AWS_ENDPOINT_URL=http://localstack:4566
+      - SOVEREIGN_API_URL=http://mock-sovereign:8080
       - ENTRYPOINT_MODE=worker
     depends_on:
       init-aws:
         condition: service_completed_successfully
+      mock-sovereign:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

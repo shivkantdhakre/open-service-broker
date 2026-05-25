@@ -12,7 +12,8 @@ from __future__ import annotations
 import structlog
 from fastapi import APIRouter, HTTPException, status
 
-from broker.dependencies import LLMDep
+from broker.dependencies import LLMDep, SQSDep
+from broker.schemas.task import TaskMessage, TaskType
 from broker.schemas.maintenance import (
     AnalyzeRequest,
     CouplingReport,
@@ -119,6 +120,7 @@ async def list_proposals(llm: LLMDep) -> list[RefactorProposal]:
 async def approve_proposal(
     proposal_id: str,
     llm: LLMDep,
+    sqs: SQSDep,
     approved_by: str = "api-user",
 ) -> RefactorProposal:
     """Approve a refactoring proposal for PR generation."""
@@ -133,5 +135,17 @@ async def approve_proposal(
                 "title": f"No proposal with ID '{proposal_id}' exists.",
             },
         )
+
+    # Enqueue a background task to process the refactoring PR
+    task = TaskMessage(
+        task_id=f"maint-{proposal_id}",
+        task_type=TaskType.MAINTENANCE,
+        resource_id=proposal_id,
+        configuration={
+            "proposal": proposal.model_dump(mode="json"),
+            "dry_run": True,
+        },
+    )
+    await sqs.enqueue_task(task)
 
     return proposal

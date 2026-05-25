@@ -269,3 +269,56 @@ async def test_github_adapter_live_client_interactions() -> None:
             head="feature/test-branch",
         )
         assert pr_url == "https://github.com/owner/repo/pull/99"
+
+
+def test_approve_proposal_route():
+    """Verify POST /api/v1/maintenance/proposals/{id}/approve enqueues SQS task."""
+    from fastapi.testclient import TestClient
+    from broker.main import app
+    from broker.dependencies import get_sqs_service
+    from broker.services.refactoring_agent import RefactoringAgent
+    from broker.schemas.maintenance import RefactorProposal
+    import broker.routers.maintenance as maint_router
+
+    # Create mock SQS service
+    mock_sqs = MagicMock()
+    mock_sqs.enqueue_task = AsyncMock(return_value="msg-123")
+
+    # Set up a mock RefactoringAgent with an approved proposal mock
+    mock_proposal = RefactorProposal(
+        proposal_id="proposal-123",
+        title="Decouple modules",
+        description="Refactor code",
+        files_affected=["a.py"],
+        diff_preview="--- diff",
+        confidence=0.9,
+        estimated_effort="small",
+        status="approved",
+    )
+    
+    mock_agent = MagicMock(spec=RefactoringAgent)
+    mock_agent.approve_proposal = AsyncMock(return_value=mock_proposal)
+    maint_router._refactoring_agent = mock_agent
+
+    # Override dependencies
+    app.dependency_overrides[get_sqs_service] = lambda: mock_sqs
+
+    client = TestClient(app)
+    
+    response = client.post("/api/v1/maintenance/proposals/proposal-123/approve")
+    
+    assert response.status_code == 200
+    res_data = response.json()
+    assert res_data["proposal_id"] == "proposal-123"
+    assert res_data["status"] == "approved"
+
+    # Verify SQS task was enqueued
+    mock_sqs.enqueue_task.assert_called_once()
+    called_task = mock_sqs.enqueue_task.call_args[0][0]
+    assert called_task.task_type == "maintenance"
+    assert called_task.resource_id == "proposal-123"
+    assert called_task.configuration["proposal"]["proposal_id"] == "proposal-123"
+    
+    # Clean up overrides
+    app.dependency_overrides.clear()
+    maint_router._refactoring_agent = None
