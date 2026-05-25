@@ -15,8 +15,8 @@ env:
   ECS_CLUSTER: osb-cluster-production
   ECS_SERVICE_API: osb-service-api-production
   ECS_SERVICE_WORKER: osb-service-worker-production
-  CONTAINER_NAME_API: broker-api
-  CONTAINER_NAME_WORKER: broker-worker
+  CONTAINER_NAME_API: api
+  CONTAINER_NAME_WORKER: worker
 
 jobs:
   deploy:
