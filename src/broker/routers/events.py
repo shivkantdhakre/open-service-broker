@@ -176,3 +176,16 @@ async def _ws_send(websocket: WebSocket, event_bus: EventBusDep, client_id: str)
             })
     except WebSocketDisconnect:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Metrics Endpoint
+# ---------------------------------------------------------------------------
+@router.get(
+    "/metrics",
+    summary="Get real-time event bus metrics",
+    description="Returns real-time statistics of successful/failed parses and provisions.",
+)
+async def get_metrics(event_bus: EventBusDep) -> dict[str, int]:
+    """Retrieve in-memory event bus metrics."""
+    return event_bus.metrics

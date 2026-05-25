@@ -47,6 +47,12 @@ class EventBus:
         self._subscribers: dict[str, asyncio.Queue[Event | None]] = {}
         self._max_queue_size = max_queue_size
         self._lock = asyncio.Lock()
+        self.metrics: dict[str, int] = {
+            "intent_parse_success": 0,
+            "intent_parse_failed": 0,
+            "provision_success": 0,
+            "provision_failed": 0,
+        }
 
     async def subscribe(self, client_id: str) -> AsyncIterator[Event]:
         """Subscribe to the event stream.
@@ -99,6 +105,22 @@ class EventBus:
         Args:
             event: The event to broadcast.
         """
+        # Update metrics counters based on event metadata
+        if event.event_type == "intent_parsed":
+            status = event.data.get("status")
+            if status == "success":
+                self.metrics["intent_parse_success"] += 1
+            elif status == "failed":
+                self.metrics["intent_parse_failed"] += 1
+        elif event.event_type == "state_change" or event.event_type == "message":
+            state = event.state or event.data.get("state")
+            if isinstance(state, str):
+                state = state.upper()
+                if state == "ACTIVE":
+                    self.metrics["provision_success"] += 1
+                elif state == "FAILED":
+                    self.metrics["provision_failed"] += 1
+
         async with self._lock:
             subscriber_ids = list(self._subscribers.keys())
 

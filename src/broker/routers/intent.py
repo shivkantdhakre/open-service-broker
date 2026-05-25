@@ -24,6 +24,7 @@ from broker.schemas.resource import ResourceRecord, ResourceState
 from broker.schemas.task import TaskMessage, TaskType
 from broker.services.intent_parser import IntentParserService
 from broker.services.llm_gateway import LLMParsingError
+from broker.services.event_bus import Event
 
 logger = structlog.get_logger()
 
@@ -45,6 +46,7 @@ async def parse_intent(
     request: IntentRequest,
     llm: LLMDep,
     safety: SafetyDep,
+    event_bus: EventBusDep,
 ) -> IntentResponse:
     """Parse a natural language request into a validated configuration."""
     parser = IntentParserService(llm, safety)
@@ -54,8 +56,26 @@ async def parse_intent(
             natural_language=request.natural_language,
             context=request.context,
         )
+        # Publish success event
+        await event_bus.publish(
+            Event(
+                event_type="intent_parsed",
+                resource_id=response.request_id,
+                data={
+                    "status": "success",
+                    "action": response.parsed_configuration.action.value if hasattr(response.parsed_configuration.action, "value") else str(response.parsed_configuration.action),
+                },
+            )
+        )
     except LLMParsingError as e:
         await logger.aerror("Intent parsing failed", error=str(e))
+        # Publish failure event
+        await event_bus.publish(
+            Event(
+                event_type="intent_parsed",
+                data={"status": "failed", "error": str(e)},
+            )
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={

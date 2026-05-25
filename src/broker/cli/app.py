@@ -48,6 +48,7 @@ from broker.cli.display import (
     display_drift_alerts,
     display_proposals_table,
     display_approved_proposal,
+    display_metrics,
 )
 
 # ---------------------------------------------------------------------------
@@ -395,6 +396,22 @@ def events_watch() -> None:
                         display_sse_event(data, event.event)
             except KeyboardInterrupt:
                 console.print("\n[osb.muted]Disconnected from event stream.[/]")
+
+    _execute(_run)
+
+
+@events_app.command("metrics")
+def events_metrics() -> None:
+    """Retrieve and display real-time event bus pub/sub metrics."""
+    cfg = _get_config()
+
+    async def _run() -> None:
+        async with BrokerAPIClient(cfg) as client:
+            result = await client.get_metrics()
+            if cfg.output_format == "json":
+                display_json(result)
+            else:
+                display_metrics(result)
 
     _execute(_run)
 

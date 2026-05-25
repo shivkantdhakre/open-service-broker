@@ -526,3 +526,44 @@ class TestResilientEventStreaming:
 
         assert "Disconnected or cannot connect to event stream" in str(exc_info.value)
         assert "Some HTTP error" in str(exc_info.value)
+
+    @patch("broker.cli.app.BrokerAPIClient")
+    def test_events_metrics_rich(self, mock_cls: MagicMock):
+        mock_instance = AsyncMock()
+        mock_instance.get_metrics.return_value = {
+            "intent_parse_success": 4,
+            "intent_parse_failed": 1,
+            "provision_success": 2,
+            "provision_failed": 0,
+        }
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_instance
+
+        result = runner.invoke(app, ["events", "metrics"])
+        assert result.exit_code == 0
+        assert "Real-Time Pub/Sub Metrics" in result.output
+        assert "Total Intent Parses" in result.output
+        assert "Total Provisions" in result.output
+
+    @patch("broker.cli.app.BrokerAPIClient")
+    def test_events_metrics_json(self, mock_cls: MagicMock):
+        mock_instance = AsyncMock()
+        mock_instance.get_metrics.return_value = {
+            "intent_parse_success": 4,
+            "intent_parse_failed": 1,
+            "provision_success": 2,
+            "provision_failed": 0,
+        }
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_instance
+
+        result = runner.invoke(app, ["--json", "events", "metrics"])
+        assert result.exit_code == 0
+        import re
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        plain_output = ansi_escape.sub('', result.output)
+        data = json.loads(plain_output)
+        assert data["intent_parse_success"] == 4
+        assert data["intent_parse_failed"] == 1

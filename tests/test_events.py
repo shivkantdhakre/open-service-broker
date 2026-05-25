@@ -141,3 +141,44 @@ class TestEventBus:
         sse_data = event.to_sse_data()
         assert '"event_type":"state_change"' in sse_data
         assert '"resource_id":"res-1"' in sse_data
+
+    @pytest.mark.asyncio
+    async def test_event_bus_metrics_tracking(self):
+        """Publishing events should update the event bus metrics counters."""
+        bus = EventBus()
+
+        assert bus.metrics["intent_parse_success"] == 0
+        assert bus.metrics["intent_parse_failed"] == 0
+        assert bus.metrics["provision_success"] == 0
+        assert bus.metrics["provision_failed"] == 0
+
+        await bus.publish(Event(event_type="intent_parsed", data={"status": "success"}))
+        await bus.publish(Event(event_type="intent_parsed", data={"status": "failed"}))
+        assert bus.metrics["intent_parse_success"] == 1
+        assert bus.metrics["intent_parse_failed"] == 1
+
+        await bus.publish(Event(event_type="state_change", state="ACTIVE"))
+        await bus.publish(Event(event_type="state_change", state="FAILED"))
+        assert bus.metrics["provision_success"] == 1
+        assert bus.metrics["provision_failed"] == 1
+
+    def test_metrics_api_route(self):
+        """GET /api/v1/events/metrics should return the event bus metrics."""
+        from fastapi.testclient import TestClient
+        from broker.main import app
+        from broker.dependencies import get_event_bus
+        from broker.services.event_bus import EventBus
+
+        bus = EventBus()
+        bus.metrics["intent_parse_success"] = 12
+        app.dependency_overrides[get_event_bus] = lambda: bus
+
+        client = TestClient(app)
+        response = client.get("/api/v1/events/metrics")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["intent_parse_success"] == 12
+        assert "provision_success" in data
+
+        # Clear override
+        app.dependency_overrides.clear()

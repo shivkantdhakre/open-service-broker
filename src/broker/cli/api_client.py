@@ -282,6 +282,10 @@ class BrokerAPIClient:
         """POST /api/v1/maintenance/proposals/{proposal_id}/approve"""
         return await self._request("POST", f"/api/v1/maintenance/proposals/{proposal_id}/approve")
 
+    async def get_metrics(self) -> dict[str, Any]:
+        """GET /api/v1/events/metrics"""
+        return await self._request("GET", "/api/v1/events/metrics")
+
     # -- SSE streaming ------------------------------------------------------
 
     async def stream_events(self) -> AsyncIterator[SSEEvent]:

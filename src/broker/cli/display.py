@@ -668,6 +668,59 @@ def display_approved_proposal(proposal: dict[str, Any]) -> None:
     )
 
 
+
+
+
+def display_metrics(metrics: dict[str, Any]) -> None:
+    """Display real-time pub/sub metrics in a visual panel."""
+    from rich.console import Group
+
+    parse_success = metrics.get("intent_parse_success", 0)
+    parse_failed = metrics.get("intent_parse_failed", 0)
+    provision_success = metrics.get("provision_success", 0)
+    provision_failed = metrics.get("provision_failed", 0)
+
+    total_parses = parse_success + parse_failed
+    total_provisions = provision_success + provision_failed
+
+    def make_percentage_bar(success: int, failed: int) -> Text:
+        total = success + failed
+        if total == 0:
+            return Text("—", style="osb.muted")
+        success_pct = success / total
+        width = 20
+        filled = int(success_pct * width)
+        empty = width - filled
+        bar = Text()
+        bar.append("█" * filled, style="green")
+        bar.append("█" * empty, style="red")
+        bar.append(f"  {success_pct:.0%} Success", style="bold green" if success_pct >= 0.8 else "bold yellow")
+        return bar
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="osb.key", min_width=22)
+    grid.add_column()
+
+    grid.add_row("Total Intent Parses", Text(str(total_parses), style="osb.value"))
+    grid.add_row("  ├─ Successful", Text(str(parse_success), style="osb.success"))
+    grid.add_row("  └─ Failed", Text(str(parse_failed), style="osb.error" if parse_failed > 0 else "osb.muted"))
+    grid.add_row("Parse Ratio", make_percentage_bar(parse_success, parse_failed))
+    grid.add_row("", "")
+    grid.add_row("Total Provisions", Text(str(total_provisions), style="osb.value"))
+    grid.add_row("  ├─ Successful", Text(str(provision_success), style="osb.success"))
+    grid.add_row("  └─ Failed", Text(str(provision_failed), style="osb.error" if provision_failed > 0 else "osb.muted"))
+    grid.add_row("Provision Ratio", make_percentage_bar(provision_success, provision_failed))
+
+    console.print(
+        Panel(
+            grid,
+            title="[osb.brand]📡 Real-Time Pub/Sub Metrics[/]",
+            border_style="bright_cyan",
+            padding=(1, 2),
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Error display
 # ---------------------------------------------------------------------------
