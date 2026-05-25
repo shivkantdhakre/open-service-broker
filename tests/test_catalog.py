@@ -20,11 +20,11 @@ def test_get_catalog_json_endpoint(client):
     """GET /api/v1/catalog should return the JSON array of catalog schemas."""
     response = client.get("/api/v1/catalog")
     assert response.status_code == 200
-    
+
     data = response.json()
     assert isinstance(data, list)
     assert len(data) > 0
-    
+
     # Verify the structure of the first catalog item
     item = data[0]
     assert "id" in item
@@ -40,7 +40,7 @@ def test_get_catalog_html_portal(client):
     response = client.get("/catalog")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    
+
     html = response.text
     assert "<!DOCTYPE html>" in html
     assert "OSB Platform Catalog" in html

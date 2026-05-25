@@ -5,13 +5,16 @@ CloudWatch Metrics Exporter — exports EventBus metrics to AWS CloudWatch.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import contextlib
+from typing import TYPE_CHECKING
 
-import aioboto3
 import structlog
 
-from broker.config import Settings
-from broker.services.event_bus import EventBus
+if TYPE_CHECKING:
+    import aioboto3
+
+    from broker.config import Settings
+    from broker.services.event_bus import EventBus
 
 logger = structlog.get_logger()
 
@@ -47,10 +50,8 @@ class CloudWatchMetricsExporter:
         """Stop the metrics export loop."""
         if self.task:
             self.task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.task
-            except asyncio.CancelledError:
-                pass
             await logger.ainfo("Stopped CloudWatch metrics exporter background task")
 
     async def _run_loop(self) -> None:

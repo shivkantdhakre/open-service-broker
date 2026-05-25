@@ -9,12 +9,14 @@ and provides historical data access for the prediction engine.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from broker.config import Settings
 from broker.schemas.metrics import TrafficMetric
+
+if TYPE_CHECKING:
+    from broker.config import Settings
 
 logger = structlog.get_logger()
 

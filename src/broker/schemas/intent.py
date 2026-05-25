@@ -13,6 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from broker.schemas.sovereign import WeightedCluster  # noqa: TC001
+
 
 class IntentAction(StrEnum):
     """Supported configuration actions that can be parsed from natural language."""
@@ -54,7 +56,9 @@ class IntentRequest(BaseModel):
     )
 
 
-from broker.schemas.sovereign import WeightedCluster
+
+
+
 
 class ActionParameters(BaseModel):
     """Specific parameters parsed by the LLM for Envoy/xDS configuration."""

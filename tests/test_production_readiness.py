@@ -4,7 +4,6 @@ Tests for production readiness components — Secrets Manager integration and Cl
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aioboto3
@@ -102,7 +101,7 @@ async def test_cloudwatch_metrics_exporter():
     mock_cw_client.put_metric_data.assert_called_once()
     kwargs = mock_cw_client.put_metric_data.call_args[1]
     assert kwargs["Namespace"] == "OSB/TestBroker"
-    
+
     metric_data = kwargs["MetricData"]
     # Verify the metric values are correctly parsed to float
     metrics_dict = {m["MetricName"]: m["Value"] for m in metric_data}

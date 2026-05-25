@@ -11,9 +11,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import APIRouter, HTTPException, status, Request
+from fastapi import APIRouter, HTTPException, Request, status
 
-from broker.dependencies import DynamoDBDep, EventBusDep, LLMDep, SafetyDep, SQSDep
+from broker.dependencies import DynamoDBDep, EventBusDep, LLMDep, SafetyDep, SQSDep  # noqa: TC001
 from broker.schemas.intent import (
     IntentApplyRequest,
     IntentHistoryItem,
@@ -22,9 +22,9 @@ from broker.schemas.intent import (
 )
 from broker.schemas.resource import ResourceRecord, ResourceState
 from broker.schemas.task import TaskMessage, TaskType
+from broker.services.event_bus import Event
 from broker.services.intent_parser import IntentParserService
 from broker.services.llm_gateway import LLMParsingError
-from broker.services.event_bus import Event
 
 logger = structlog.get_logger()
 
@@ -188,7 +188,7 @@ async def apply_intent(
 
     await logger.ainfo(
         "Configuration queued for provisioning",
-        request_id=request.request_id,
+        request_id=apply_req.request_id,
         message_id=message_id,
         action=config.action,
         target_service=config.target_service,

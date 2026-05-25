@@ -5,6 +5,7 @@ Catalog Router — exposes service discovery JSON endpoint and HTML documentatio
 from __future__ import annotations
 
 import json
+
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
@@ -106,7 +107,7 @@ async def get_catalog_schemas() -> list[dict]:
 @router.get("/catalog", response_class=HTMLResponse, summary="View self-service catalog documentation portal")
 async def get_catalog_portal() -> str:
     """Return a beautiful responsive HTML catalog documentation page."""
-    
+
     # Generate service panels dynamically
     service_cards_html = ""
     for s in CATALOG_SERVICES:
@@ -119,9 +120,9 @@ async def get_catalog_portal() -> str:
               <td>{desc}</td>
             </tr>
             """
-            
+
         pretty_json = json.dumps(s["example_payload"], indent=2)
-        
+
         service_cards_html += f"""
         <section id="{s["id"]}" class="card">
           <div class="card-header">
@@ -131,7 +132,7 @@ async def get_catalog_portal() -> str:
             </div>
           </div>
           <p class="description">{s["description"]}</p>
-          
+
           <div class="card-body">
             <div class="schema-table-container">
               <h3>Configuration Parameters</h3>
@@ -147,7 +148,7 @@ async def get_catalog_portal() -> str:
                 </tbody>
               </table>
             </div>
-            
+
             <div class="code-container">
               <h3>Example Payload</h3>
               <pre><code>{pretty_json}</code></pre>
@@ -405,7 +406,7 @@ async def get_catalog_portal() -> str:
         <header>
           <h1>Platform Service Catalog</h1>
           <p>
-            Welcome to the self-service infrastructure catalog. Developers can discover 
+            Welcome to the self-service infrastructure catalog. Developers can discover
             provisionable cloud proxy abstractions and matching actions supported on the edge proxies.
           </p>
         </header>

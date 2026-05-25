@@ -13,6 +13,7 @@ anomaly detection as a safety net.
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import structlog
@@ -20,7 +21,6 @@ from sklearn.ensemble import IsolationForest  # type: ignore[import-untyped]
 from sklearn.linear_model import LinearRegression  # type: ignore[import-untyped]
 from ulid import ULID
 
-from broker.config import Settings
 from broker.schemas.metrics import (
     AnomalyAlert,
     AnomalySeverity,
@@ -28,6 +28,9 @@ from broker.schemas.metrics import (
     ScalingPrediction,
     TrafficMetric,
 )
+
+if TYPE_CHECKING:
+    from broker.config import Settings
 
 logger = structlog.get_logger()
 

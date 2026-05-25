@@ -4,16 +4,19 @@ Auto-Retry Agent — LLM-driven self-healing for failed provisioning configurati
 
 from __future__ import annotations
 
-import structlog
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from broker.schemas.intent import ParsedConfiguration, ValidationResult
+import structlog
+
 from broker.schemas.resource import ResourceState
 from broker.schemas.task import TaskMessage, TaskType
-from broker.services.dynamodb import DynamoDBService
-from broker.services.llm_gateway import LLMGateway
-from broker.services.safety import SafetyService
-from broker.services.sqs import SQSService
+
+if TYPE_CHECKING:
+    from broker.schemas.intent import ParsedConfiguration, ValidationResult
+    from broker.services.dynamodb import DynamoDBService
+    from broker.services.llm_gateway import LLMGateway
+    from broker.services.safety import SafetyService
+    from broker.services.sqs import SQSService
 
 logger = structlog.get_logger()
 
@@ -126,7 +129,7 @@ class AutoRetryAgent:
             # First reset state to PENDING and clear error message
             table = await self._db._get_table()
             updated_config = corrected_config.parameters.model_dump(exclude_none=True)
-            
+
             # Perform atomic state change and configuration update
             await table.update_item(
                 Key={"resource_id": resource.resource_id, "resource_type": resource.resource_type},

@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from fastapi import FastAPI, HTTPException, Request, Response
+
 import uvicorn
+from fastapi import FastAPI, HTTPException, Request, Response
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

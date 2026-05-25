@@ -9,10 +9,11 @@ DELETE /{id}       — Initiate deprovisioning of a resource
 from __future__ import annotations
 
 from typing import Any
+
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from broker.dependencies import DynamoDBDep, EventBusDep, LLMDep, SafetyDep, SQSDep
+from broker.dependencies import DynamoDBDep, EventBusDep, LLMDep, SafetyDep, SQSDep  # noqa: TC001
 from broker.schemas.resource import ResourceRecord, ResourceState
 from broker.schemas.task import TaskMessage, TaskType
 from broker.services.dynamodb import ResourceNotFoundError
@@ -52,7 +53,7 @@ async def manual_sync_resources(
 async def list_resources(
     dynamodb: DynamoDBDep,
     resource_type: str | None = Query(default=None, description="Filter by resource type"),
-    state: ResourceState | None = Query(default=None, description="Filter by state"),
+    state: ResourceState | None = Query(default=None, description="Filter by state"),  # noqa: B008
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[ResourceRecord]:
     """List resources with optional filtering by type and state."""
@@ -168,10 +169,10 @@ async def auto_retry_resource(
 ) -> dict[str, Any]:
     """Analyze a failed configuration, diagnose using LLM, and trigger retry."""
     from broker.services.auto_retry_agent import AutoRetryAgent
-    
+
     correlation_id = getattr(request.state, "request_id", None)
     agent = AutoRetryAgent(dynamodb, sqs, llm, safety)
-    
+
     try:
         result = await agent.auto_retry_resource(resource_id, correlation_id)
         if result.get("status") == "failed_validation":
@@ -193,4 +194,4 @@ async def auto_retry_resource(
                 "title": "Resource not found or invalid",
                 "detail": str(e),
             }
-        )
+        ) from e

@@ -8,7 +8,6 @@ import argparse
 import asyncio
 import os
 import sys
-from typing import Any
 
 # Force UTF-8 on Windows so emojis render correctly and stdout doesn't hang
 if sys.platform == "win32":
@@ -71,7 +70,7 @@ async def run_analyze(args: argparse.Namespace) -> int:
     print(f"Repository:               {report.repository}")
     print(f"Total files:              {report.total_files}")
     print(f"Average coupling score:    {report.average_coupling:.3f}")
-    
+
     if report.hotspots:
         print("\n🔥 Hotspot Modules:")
         for h in report.hotspots[:5]:
@@ -161,9 +160,9 @@ async def run_pr(args: argparse.Namespace) -> int:
 
     action_label = "DRY RUN: Preparing" if dry_run else "Creating"
     print(f"{action_label} pull request for repository '{args.repo_path}'...")
-    
+
     result = await runner.run(args.repo_path, dry_run=dry_run, create_pr=True)
-    
+
     if result["pr_url"]:
         print(f"Successfully processed Git workflow! PR URL: {result['pr_url']}")
     else:

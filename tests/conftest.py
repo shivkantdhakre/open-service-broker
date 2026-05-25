@@ -8,12 +8,17 @@ used across all test modules.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import boto3
 import pytest
 from moto import mock_aws  # type: ignore[import-untyped]
+from moto.server import ThreadedMotoServer
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # Set test environment before importing app
 os.environ.update({
@@ -116,15 +121,6 @@ def mock_event_bus():
     return EventBus()
 
 
-@pytest.fixture
-def mock_event_bus():
-    """Provide a fresh event bus for testing."""
-    from broker.services.event_bus import EventBus
-
-    return EventBus()
-
-
-from moto.server import ThreadedMotoServer
 
 @pytest.fixture(scope="session")
 def threaded_moto_server():
@@ -140,8 +136,8 @@ def threaded_moto_server():
 
     # Wait for the server to become ready
     import time
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     for _ in range(50):
         try:
@@ -159,8 +155,10 @@ def threaded_moto_server():
 @pytest.fixture
 async def async_dynamodb_service(settings, threaded_moto_server):
     """Provide a DynamoDBService instance connected to the mocked database."""
-    import aioboto3
     import os
+
+    import aioboto3
+
     from broker.config import get_settings
     from broker.services.dynamodb import DynamoDBService
 
@@ -170,7 +168,7 @@ async def async_dynamodb_service(settings, threaded_moto_server):
 
     # Create the table structure in the mock database
     client = boto3.client("dynamodb", region_name="us-east-1", endpoint_url=threaded_moto_server)
-    try:
+    with contextlib.suppress(client.exceptions.ResourceInUseException):
         client.create_table(
             TableName=settings.dynamodb_table_name,
             AttributeDefinitions=[
@@ -183,8 +181,6 @@ async def async_dynamodb_service(settings, threaded_moto_server):
             ],
             BillingMode="PAY_PER_REQUEST",
         )
-    except client.exceptions.ResourceInUseException:
-        pass
 
     session = aioboto3.Session(
         aws_access_key_id="testing",
@@ -202,9 +198,11 @@ async def async_dynamodb_service(settings, threaded_moto_server):
 @pytest.fixture
 async def async_sqs_service(settings, threaded_moto_server):
     """Provide an SQSService instance connected to the mocked SQS queue."""
-    import aioboto3
     import json
     import os
+
+    import aioboto3
+
     from broker.config import get_settings
     from broker.services.sqs import SQSService
 

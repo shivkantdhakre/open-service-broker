@@ -33,22 +33,22 @@ from broker.cli.config import CLIConfig, build_config
 from broker.cli.display import (
     console,
     display_apply_response,
+    display_approved_proposal,
     display_banner,
     display_connection_error,
+    display_coupling_report,
+    display_drift_alerts,
     display_error,
     display_health,
     display_intent_history,
     display_intent_response,
     display_json,
+    display_metrics,
+    display_proposals_table,
     display_resource_detail,
     display_resources_table,
     display_sse_event,
     display_sse_heartbeat,
-    display_coupling_report,
-    display_drift_alerts,
-    display_proposals_table,
-    display_approved_proposal,
-    display_metrics,
 )
 
 # ---------------------------------------------------------------------------
@@ -426,13 +426,13 @@ def maintenance_analyze(
         ".",
         help="Path to the repository to analyze.",
     ),
-    include: list[str] | None = typer.Option(
+    include: list[str] | None = typer.Option(  # noqa: B008
         None,
         "--include",
         "-i",
         help="File glob pattern to include (multiple allowed).",
     ),
-    exclude: list[str] | None = typer.Option(
+    exclude: list[str] | None = typer.Option(  # noqa: B008
         None,
         "--exclude",
         "-e",

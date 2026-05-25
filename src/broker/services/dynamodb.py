@@ -9,13 +9,15 @@ resource state machine.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from boto3.dynamodb.conditions import Attr, Key  # type: ignore[import-untyped]
 
-from broker.config import Settings
 from broker.schemas.resource import VALID_TRANSITIONS, ResourceRecord, ResourceState
+
+if TYPE_CHECKING:
+    from broker.config import Settings
 
 logger = structlog.get_logger()
 

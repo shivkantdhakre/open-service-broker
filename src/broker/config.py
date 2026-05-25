@@ -7,6 +7,7 @@ sensible defaults targeting LocalStack for local development.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -144,39 +145,27 @@ def get_settings() -> Settings:
     if settings.production_mode:
         # Override endpoint URL to None for real AWS connection
         settings.aws_endpoint_url = None
-        
+
         # Retrieve secrets from AWS Secrets Manager
         secrets = retrieve_secrets_from_manager(settings.aws_secret_name, settings.aws_region)
         for key, value in secrets.items():
             key_lower = key.lower()
             if hasattr(settings, key_lower):
                 # Handle dictionary / list field parsing if stringified in secret
-                if key_lower == "api_keys" and isinstance(value, str):
-                    try:
+                if (key_lower == "api_keys" and isinstance(value, str)) or (key_lower == "cors_origins" and isinstance(value, str)):
+                    with contextlib.suppress(Exception):
                         value = json.loads(value)
-                    except Exception:
-                        pass
-                elif key_lower == "cors_origins" and isinstance(value, str):
-                    try:
-                        value = json.loads(value)
-                    except Exception:
-                        pass
-                
+
                 # Check annotations and handle type casting if necessary
                 field_type = settings.model_fields[key_lower].annotation
                 if field_type is int:
-                    try:
+                    with contextlib.suppress(Exception):
                         value = int(value)
-                    except Exception:
-                        pass
                 elif field_type is float:
-                    try:
+                    with contextlib.suppress(Exception):
                         value = float(value)
-                    except Exception:
-                        pass
-                elif field_type is bool:
-                    if isinstance(value, str):
-                        value = value.lower() in ("true", "1", "yes")
-                
+                elif field_type is bool and isinstance(value, str):
+                    value = value.lower() in ("true", "1", "yes")
+
                 setattr(settings, key_lower, value)
     return settings

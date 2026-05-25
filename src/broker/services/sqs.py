@@ -8,12 +8,14 @@ background worker with long polling and dead-letter queue support.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from broker.config import Settings
 from broker.schemas.task import SQSMessageWrapper, TaskMessage
+
+if TYPE_CHECKING:
+    from broker.config import Settings
 
 logger = structlog.get_logger()
 

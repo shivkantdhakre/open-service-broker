@@ -4,9 +4,10 @@ Unit and integration tests for OPA/Rego compliance checking.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from broker.schemas.intent import IntentAction, ParsedConfiguration
 from broker.services.opa_client import OPAClient

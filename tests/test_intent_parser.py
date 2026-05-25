@@ -100,8 +100,9 @@ class TestIntentParserService:
     @pytest.mark.asyncio
     async def test_parse_and_validate_success_first_attempt(self):
         from unittest.mock import AsyncMock
+
+        from broker.schemas.intent import BlastRadiusReport, ValidationResult
         from broker.services.intent_parser import IntentParserService
-        from broker.schemas.intent import ValidationResult, BlastRadiusReport
 
         # Mock LLM and Safety
         mock_llm = AsyncMock()
@@ -132,8 +133,9 @@ class TestIntentParserService:
     @pytest.mark.asyncio
     async def test_parse_and_validate_self_correction_loop(self):
         from unittest.mock import AsyncMock
+
+        from broker.schemas.intent import BlastRadiusReport, ValidationResult
         from broker.services.intent_parser import IntentParserService
-        from broker.schemas.intent import ValidationResult, BlastRadiusReport
 
         mock_llm = AsyncMock()
         mock_safety = AsyncMock()

@@ -4,10 +4,15 @@ Unit tests for the Auto-Retry Agent.
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
-from broker.schemas.intent import IntentAction, ParsedConfiguration, ValidationResult, BlastRadiusReport
+import pytest
+
+from broker.schemas.intent import (
+    IntentAction,
+    ParsedConfiguration,
+    ValidationResult,
+)
 from broker.schemas.resource import ResourceRecord, ResourceState
 from broker.services.auto_retry_agent import AutoRetryAgent
 
@@ -124,16 +129,18 @@ class TestAutoRetryAgent:
 
 
 def test_auto_retry_api_endpoint():
+    from unittest.mock import AsyncMock
+
     from fastapi.testclient import TestClient
+
     from broker.main import app
-    from unittest.mock import AsyncMock, patch
 
     # Mock the dependencies
     mock_db = AsyncMock()
     # Mock update_item inside table
     mock_table = AsyncMock()
     mock_db._get_table.return_value = mock_table
-    
+
     mock_sqs = AsyncMock()
     mock_llm = AsyncMock()
     mock_safety = AsyncMock()
@@ -159,8 +166,13 @@ def test_auto_retry_api_endpoint():
     mock_sqs.enqueue_task.return_value = "msg-api-999"
 
     # Override dependencies
-    from broker.dependencies import get_dynamodb_service, get_sqs_service, get_llm_gateway, get_safety_service
-    
+    from broker.dependencies import (
+        get_dynamodb_service,
+        get_llm_gateway,
+        get_safety_service,
+        get_sqs_service,
+    )
+
     async def override_db():
         yield mock_db
 

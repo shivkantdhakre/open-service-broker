@@ -10,16 +10,16 @@ POST /proposals/{id}/approve — Approve a proposal for PR generation
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, HTTPException, status, Request
+from fastapi import APIRouter, HTTPException, Request, status
 
-from broker.dependencies import LLMDep, SQSDep
-from broker.schemas.task import TaskMessage, TaskType
+from broker.dependencies import LLMDep, SQSDep  # noqa: TC001
 from broker.schemas.maintenance import (
     AnalyzeRequest,
     CouplingReport,
     DriftAlert,
     RefactorProposal,
 )
+from broker.schemas.task import TaskMessage, TaskType
 from broker.services.code_analyzer import CodeAnalyzer
 from broker.services.refactoring_agent import RefactoringAgent
 

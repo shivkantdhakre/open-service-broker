@@ -15,7 +15,7 @@ import pytest
 from typer.testing import CliRunner
 
 from broker.cli.app import app
-from broker.cli.config import CLIConfig, build_config
+from broker.cli.config import build_config
 
 runner = CliRunner()
 
@@ -510,7 +510,9 @@ class TestResilientEventStreaming:
     async def test_stream_events_general_httpx_error(self):
         """stream_events should catch httpx.HTTPError and raise a custom ConnectionError."""
         import httpx
-        from broker.cli.api_client import BrokerAPIClient, ConnectionError as BrokerConnectionError
+
+        from broker.cli.api_client import BrokerAPIClient
+        from broker.cli.api_client import ConnectionError as BrokerConnectionError
 
         client = AsyncMock()
         client.stream = MagicMock()

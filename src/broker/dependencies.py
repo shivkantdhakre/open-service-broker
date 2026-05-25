@@ -7,8 +7,7 @@ DynamoDB, SQS, LLM Gateway, Event Bus, and Settings.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Request
 
@@ -18,6 +17,9 @@ from broker.services.event_bus import EventBus
 from broker.services.llm_gateway import LLMGateway, create_llm_gateway
 from broker.services.safety import SafetyService
 from broker.services.sqs import SQSService
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 # ---------------------------------------------------------------------------

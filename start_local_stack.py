@@ -13,13 +13,15 @@ Press Ctrl+C to stop all services cleanly.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import subprocess
 import sys
 import time
-import urllib.request
 import urllib.error
-import json
+import urllib.request
+
 import boto3
 
 # Force UTF-8 encoding on Windows
@@ -43,17 +45,15 @@ def cleanup() -> None:
             proc.terminate()
             proc.wait(timeout=2)
         except Exception:
-            try:
+            with contextlib.suppress(Exception):
                 proc.kill()
-            except Exception:
-                pass
     print("All services stopped.")
 
 
 def main() -> None:
     # Load .env file to set up identical AWS credentials
     if os.path.exists(".env"):
-        with open(".env", "r", encoding="utf-8") as f:
+        with open(".env", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:

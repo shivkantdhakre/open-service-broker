@@ -6,17 +6,17 @@ from __future__ import annotations
 
 import json
 from unittest.mock import MagicMock, patch
+
 import pytest
-from pydantic import BaseModel, Field
 
 from broker.config import Settings
-from broker.schemas.intent import ParsedConfiguration, IntentAction
+from broker.schemas.intent import IntentAction, ParsedConfiguration
 from broker.services.llm_gateway import (
-    _inline_refs,
-    _resolve_anyof,
-    _clean_schema,
-    _pydantic_to_gemini_schema,
     GeminiGateway,
+    _clean_schema,
+    _inline_refs,
+    _pydantic_to_gemini_schema,
+    _resolve_anyof,
     create_llm_gateway,
 )
 
@@ -35,7 +35,7 @@ def test_schema_inlining():
             "sub": {"$ref": "#/$defs/SubModel"},
         },
     }
-    
+
     inlined = _inline_refs(schema)
     assert "$ref" not in inlined["properties"]["sub"]
     assert inlined["properties"]["sub"]["type"] == "object"
@@ -54,7 +54,7 @@ def test_resolve_anyof():
             }
         }
     }
-    
+
     resolved = _resolve_anyof(schema)
     prop = resolved["properties"]["maybe_str"]
     assert "anyOf" not in prop
@@ -78,12 +78,12 @@ def test_clean_schema():
             }
         }
     }
-    
+
     _clean_schema(schema)
     assert "title" not in schema
     assert "default" not in schema
     assert "additionalProperties" not in schema
-    
+
     count_prop = schema["properties"]["count"]
     assert "minimum" not in count_prop
     assert "maximum" not in count_prop
@@ -94,13 +94,13 @@ def test_clean_schema():
 def test_pydantic_to_gemini_schema():
     """Test full pipeline conversion of ParsedConfiguration model."""
     schema = _pydantic_to_gemini_schema(ParsedConfiguration)
-    
+
     # Assert top-level keys
     assert "$defs" not in schema
     assert "$ref" not in schema
     assert "title" not in schema
     assert "default" not in schema
-    
+
     # Check that it cleaned nested structures like parameters
     assert "properties" in schema
     params_schema = schema["properties"]["parameters"]
@@ -118,15 +118,15 @@ async def test_gemini_gateway_lazy_initialization():
         llm_temperature=0.2,
         llm_max_tokens=2048,
     )
-    
+
     gateway = GeminiGateway(settings)
     assert gateway._model is None
-    
+
     with patch("google.generativeai.configure") as mock_configure, \
          patch("google.generativeai.GenerativeModel") as mock_generative_model:
-        
+
         model = gateway._get_model()
-        
+
         mock_configure.assert_called_once_with(api_key="mock-api-key-123")
         mock_generative_model.assert_called_once()
         assert gateway._model is not None
@@ -141,9 +141,9 @@ async def test_gemini_gateway_parse_intent_success():
         llm_api_key="mock-api-key",
         llm_model="gemini-1.5-flash",
     )
-    
+
     gateway = GeminiGateway(settings)
-    
+
     mock_model = MagicMock()
     mock_response = MagicMock()
     # Mocking Gemini response containing JSON matching ParsedConfiguration
@@ -159,15 +159,15 @@ async def test_gemini_gateway_parse_intent_success():
     })
     mock_model.generate_content.return_value = mock_response
     gateway._model = mock_model
-    
+
     result = await gateway.parse_intent("Create a route for user-service to cluster user-cluster")
-    
+
     assert isinstance(result, ParsedConfiguration)
     assert result.action == IntentAction.CREATE_ROUTE
     assert result.target_service == "user-service"
     assert result.parameters["route_name"] == "user-route"
     assert result.parameters["target_cluster"] == "user-cluster"
-    
+
     score = await gateway.get_confidence_score()
     assert score > 0.7
 
@@ -180,16 +180,16 @@ async def test_gemini_gateway_parse_intent_retry_logic():
         llm_api_key="mock-api-key",
         llm_model="gemini-1.5-flash",
     )
-    
+
     gateway = GeminiGateway(settings)
-    
+
     mock_model = MagicMock()
     # First response: invalid JSON
     # Second response: valid JSON but invalid schema (missing target_service)
     # Third response: fully valid JSON
     mock_resp1 = MagicMock()
     mock_resp1.text = "invalid json text"
-    
+
     mock_resp2 = MagicMock()
     mock_resp2.text = json.dumps({
         "action": "create_route",
@@ -197,7 +197,7 @@ async def test_gemini_gateway_parse_intent_retry_logic():
         "parameters": {},
         "reasoning": "Missing service."
     })
-    
+
     mock_resp3 = MagicMock()
     mock_resp3.text = json.dumps({
         "action": "create_route",
@@ -205,10 +205,10 @@ async def test_gemini_gateway_parse_intent_retry_logic():
         "parameters": {"route_name": "auth-route"},
         "reasoning": "Success on third try."
     })
-    
+
     mock_model.generate_content.side_effect = [mock_resp1, mock_resp2, mock_resp3]
     gateway._model = mock_model
-    
+
     result = await gateway.parse_intent("some request")
     assert result.target_service == "auth-service"
     assert mock_model.generate_content.call_count == 3
@@ -221,6 +221,6 @@ def test_factory_resolves_gemini():
         llm_api_key="mock-api-key",
         llm_model="gemini-1.5-flash",
     )
-    
+
     gateway = create_llm_gateway(settings)
     assert isinstance(gateway, GeminiGateway)

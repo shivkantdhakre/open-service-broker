@@ -5,11 +5,15 @@ Problem Detail responses for consistent error formatting.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import structlog
-from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI, Request
 
 logger = structlog.get_logger()
 

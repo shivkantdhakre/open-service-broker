@@ -10,8 +10,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any
 
 import aioboto3
 import structlog
@@ -25,8 +25,11 @@ from broker.middleware.error_handler import register_exception_handlers
 from broker.middleware.logging import StructuredLoggingMiddleware
 from broker.middleware.request_id import RequestIdMiddleware
 from broker.routers import catalog, events, health, intent, maintenance, resources, scaling
-from broker.services.event_bus import Event, EventBus
 from broker.services.cloudwatch_exporter import CloudWatchMetricsExporter
+from broker.services.event_bus import Event, EventBus
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 # ---------------------------------------------------------------------------
 # Structured logging configuration

@@ -12,13 +12,15 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import structlog
 from pydantic import BaseModel, ValidationError
 
-from broker.config import Settings
 from broker.schemas.intent import IntentAction, ParsedConfiguration
+
+if TYPE_CHECKING:
+    from broker.config import Settings
 
 logger = structlog.get_logger()
 

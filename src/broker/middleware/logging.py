@@ -6,11 +6,14 @@ timing, status, and path information in structured JSON format.
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import Response
 
 logger = structlog.get_logger()
 

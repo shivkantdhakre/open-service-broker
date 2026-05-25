@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from broker.schemas.resource import ResourceRecord, ResourceState
-from broker.schemas.task import SQSMessageWrapper, TaskMessage, TaskType
-from broker.services.sovereign_client import SovereignClient, SovereignError
+from broker.schemas.task import TaskMessage, TaskType
+from broker.services.sovereign_client import SovereignClient
 from broker.worker import Worker
 
 
@@ -24,6 +24,7 @@ from broker.worker import Worker
 def integration_worker(threaded_moto_server):
     """Provide a Worker instance configured to use the threaded mock AWS server."""
     import os
+
     from broker.config import get_settings
 
     os.environ["AWS_ENDPOINT_URL"] = threaded_moto_server
@@ -247,7 +248,7 @@ class TestWorkerIntegration:
                     assert "GITHUB_REPO env var or repo_name must be set" in m["Body"]
                     found = True
                     break
-            assert found, f"Expected failed maintenance task in DLQ"
+            assert found, "Expected failed maintenance task in DLQ"
 
     async def test_worker_idempotency_skip(
         self,
@@ -311,7 +312,7 @@ class TestWorkerIntegration:
         async_sqs_service,
     ):
         """Verify that when a task is routed to the DLQ, the worker posts an anomaly event via HTTP."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         # 1. Create a PENDING resource
         record = ResourceRecord(
@@ -366,12 +367,14 @@ class TestWorkerIntegration:
 
     async def test_dlq_poller_task(self, threaded_moto_server):
         """Verify that the DLQ depth poller publishes an anomaly event when messages are in the DLQ."""
+        import contextlib
+
         import aioboto3
         import boto3
-        import contextlib
-        from broker.services.event_bus import EventBus
+
         from broker.config import Settings
         from broker.main import poll_dlq_depth
+        from broker.services.event_bus import EventBus
 
         # 1. Initialize mock SQS queues using boto3
         sqs_client = boto3.client("sqs", region_name="us-east-1", endpoint_url=threaded_moto_server)

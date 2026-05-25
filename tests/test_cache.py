@@ -5,12 +5,18 @@ Unit tests for the response caching layer.
 from __future__ import annotations
 
 import sys
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-from broker.schemas.intent import IntentAction, ParsedConfiguration, ValidationResult, BlastRadiusReport
-from broker.services.intent_parser import IntentParserService
+import pytest
+
 from broker.config import get_settings
+from broker.schemas.intent import (
+    BlastRadiusReport,
+    IntentAction,
+    ParsedConfiguration,
+    ValidationResult,
+)
+from broker.services.intent_parser import IntentParserService
 
 
 @pytest.fixture
@@ -33,12 +39,12 @@ class TestResponseCache:
     def restore_settings_and_clear_cache(self):
         """Reset the class-level cache and restore settings after each test."""
         IntentParserService._cache.clear()
-        
+
         orig_enabled = get_settings().response_cache_enabled
         orig_redis = get_settings().redis_url
-        
+
         yield
-        
+
         get_settings().response_cache_enabled = orig_enabled
         get_settings().redis_url = orig_redis
         IntentParserService._cache.clear()
@@ -48,7 +54,7 @@ class TestResponseCache:
         """Subsequent identical requests should hit the in-memory cache and avoid LLM gateway calls."""
         get_settings().response_cache_enabled = True
         get_settings().redis_url = None
-        
+
         config = ParsedConfiguration(
             action=IntentAction.CREATE_ROUTE,
             target_service="test-service",
@@ -70,7 +76,7 @@ class TestResponseCache:
         assert resp2.parsed_configuration == config
         # LLM parse_intent should NOT have been called again
         assert mock_llm.parse_intent.call_count == 1
-        
+
         # Verify that request_id is fresh for each cache hit
         assert resp1.request_id != resp2.request_id
 
@@ -78,7 +84,7 @@ class TestResponseCache:
     async def test_cache_disabled(self, mock_llm, mock_safety):
         """If response caching is disabled, LLM gateway should be queried every time."""
         get_settings().response_cache_enabled = False
-        
+
         config = ParsedConfiguration(
             action=IntentAction.CREATE_ROUTE,
             target_service="test-service",

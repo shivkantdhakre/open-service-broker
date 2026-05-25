@@ -51,7 +51,8 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
-    "moto[dynamodb,sqs]>=5.0.0",
+    "flask",
+    "moto[server,dynamodb,sqs]>=5.0.0",
 ]
 cli = [
     "typer>=0.12.0",

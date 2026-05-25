@@ -4,18 +4,19 @@ Maintenance Runner — orchestrates coupling analysis, drift detection, refactor
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from broker.config import Settings
 from broker.schemas.maintenance import CouplingReport, DriftAlert, DriftSeverity, RefactorProposal
 from broker.services.code_analyzer import CodeAnalyzer
-from broker.services.github_integration import GitProviderAdapter, GitHubAdapter
+from broker.services.github_integration import GitHubAdapter, GitProviderAdapter
 from broker.services.llm_gateway import create_llm_gateway
 from broker.services.refactoring_agent import RefactoringAgent
+
+if TYPE_CHECKING:
+    from broker.config import Settings
 
 logger = structlog.get_logger()
 
@@ -61,10 +62,7 @@ class MaintenanceRunner:
                 a for a in drift_alerts
                 if a.severity in {DriftSeverity.HIGH, DriftSeverity.CRITICAL}
             ]
-            if high_critical:
-                severity_level = 2
-            else:
-                severity_level = 1
+            severity_level = 2 if high_critical else 1
 
         # Generate markdown report
         report_md = self._generate_report_markdown(coupling_report, drift_alerts, proposals)
@@ -78,7 +76,7 @@ class MaintenanceRunner:
             timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
             branch_name = f"refactor/coupling-mitigation-{timestamp}"
             title = f"🔧 AI Maintenance: Coupling Mitigation ({timestamp})"
-            
+
             # Commit the report as a documentation file
             file_changes = {
                 "reports/coupling_report.md": report_md

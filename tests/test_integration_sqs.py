@@ -12,10 +12,10 @@ Verifies:
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 from broker.schemas.task import TaskMessage, TaskType
-from broker.services.sqs import SQSService
 
 
 @pytest.mark.asyncio

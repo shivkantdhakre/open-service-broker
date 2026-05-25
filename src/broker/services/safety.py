@@ -14,12 +14,10 @@ Responsibilities:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
-from pydantic import BaseModel
 
-from broker.config import Settings
 from broker.schemas.intent import (
     BlastRadiusReport,
     IntentAction,
@@ -27,6 +25,11 @@ from broker.schemas.intent import (
     ValidationResult,
 )
 from broker.schemas.sovereign import RateLimitConfig, RouteConfig
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from broker.config import Settings
 
 logger = structlog.get_logger()
 

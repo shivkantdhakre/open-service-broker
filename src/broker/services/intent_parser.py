@@ -12,8 +12,9 @@ Pipeline steps:
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import structlog
 from tenacity import (
@@ -37,9 +38,10 @@ from broker.schemas.sovereign import (
     RouteMatch,
     WeightedCluster,
 )
-import threading
 from broker.services.llm_gateway import LLMGateway, LLMParsingError
-from broker.services.safety import SafetyService
+
+if TYPE_CHECKING:
+    from broker.services.safety import SafetyService
 
 logger = structlog.get_logger()
 
@@ -48,7 +50,7 @@ class IntentParserService:
     """Orchestrates the AI intent parsing pipeline with safety guardrails."""
 
     # Class-level cache and lock for persistence across request-scoped instantiations
-    _cache: dict[str, Any] = {}
+    _cache: ClassVar[dict[str, Any]] = {}
     _cache_lock = threading.Lock()
 
     def __init__(self, llm_gateway: LLMGateway, safety_service: SafetyService) -> None:
@@ -84,7 +86,7 @@ class IntentParserService:
         from broker.config import get_settings
         settings = get_settings()
         cache_enabled = settings.response_cache_enabled
-        
+
         cache_key = None
         if cache_enabled:
             import hashlib
@@ -92,7 +94,7 @@ class IntentParserService:
             ctx_dump = json.dumps(context or {}, sort_keys=True)
             key_raw = f"{sanitized_input.strip().lower()}||{ctx_dump}"
             cache_key = hashlib.sha256(key_raw.encode("utf-8")).hexdigest()
-            
+
             # 1. Check Redis first if url is configured
             if settings.redis_url:
                 try:

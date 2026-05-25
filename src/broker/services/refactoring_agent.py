@@ -9,12 +9,15 @@ suggestions only — they require human approval before execution.
 from __future__ import annotations
 
 from datetime import UTC
+from typing import TYPE_CHECKING
 
 import structlog
 from ulid import ULID
 
 from broker.schemas.maintenance import CouplingReport, RefactorProposal
-from broker.services.llm_gateway import LLMGateway
+
+if TYPE_CHECKING:
+    from broker.services.llm_gateway import LLMGateway
 
 logger = structlog.get_logger()
 

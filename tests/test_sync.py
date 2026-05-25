@@ -4,8 +4,9 @@ Unit tests for the Sovereign Edge Sync Service.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from broker.schemas.resource import ResourceRecord, ResourceState
 from broker.services.sync_service import SovereignSyncService

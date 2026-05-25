@@ -5,6 +5,7 @@ Tests for the Event Bus — pub/sub broadcasting and subscriber management.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 import pytest
 
@@ -84,6 +85,10 @@ class TestEventBus:
         await bus.unsubscribe("test")
         await asyncio.sleep(0.05)
         assert bus.subscriber_count == 0
+
+        _task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _task
 
     @pytest.mark.asyncio
     async def test_publish_state_change_convenience(self):
@@ -165,8 +170,9 @@ class TestEventBus:
     def test_metrics_api_route(self):
         """GET /api/v1/events/metrics should return the event bus metrics."""
         from fastapi.testclient import TestClient
-        from broker.main import app
+
         from broker.dependencies import get_event_bus
+        from broker.main import app
         from broker.services.event_bus import EventBus
 
         bus = EventBus()
@@ -187,8 +193,9 @@ class TestEventBus:
     async def test_publish_api_route(self):
         """POST /api/v1/events/publish should publish the event to the event bus."""
         from fastapi.testclient import TestClient
-        from broker.main import app
+
         from broker.dependencies import get_event_bus
+        from broker.main import app
         from broker.services.event_bus import EventBus
 
         bus = EventBus()

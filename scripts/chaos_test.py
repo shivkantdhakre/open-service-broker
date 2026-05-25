@@ -5,10 +5,11 @@ Chaos Testing Script — simulates worker failure, SQS DLQ routing, and EventBus
 from __future__ import annotations
 
 import asyncio
-import aioboto3
 import json
 import logging
 import sys
+
+import aioboto3
 
 from broker.config import get_settings
 from broker.schemas.resource import ResourceRecord, ResourceState
@@ -59,28 +60,29 @@ async def run_chaos_test():
             configuration={"action": "create_route", "target_service": "invalid-service-name; DROP TABLE;--"},
             correlation_id="chaos-correlation-999",
         )
-        
+
         msg_id = await sqs_service.enqueue_task(task)
         logger.info(f"Task enqueued to SQS. Message ID: {msg_id}")
 
         # 3. Instantiate Worker and trigger message processing (simulating 3rd retry failure)
         logger.info("Instantiating worker to process task...")
         worker = Worker()
-        
+
         # Long-poll and receive the task from SQS
         messages = await sqs_service.receive_tasks(max_messages=1, wait_seconds=1)
         if not messages:
             logger.error("No messages received from SQS queue. Make sure LocalStack is running.")
             sys.exit(1)
-            
+
         msg = messages[0]
         logger.info(f"Worker received message. Task ID: {msg.body.task_id}")
-        
+
         # Force receive count to 3 to trigger immediate DLQ routing upon failure
         msg.approximate_receive_count = 3
-        
+
         # Patch the Sovereign client to throw connection errors to simulate control plane failure
         from unittest.mock import AsyncMock
+
         from broker.services.sovereign_client import SovereignClient
         mock_sovereign = AsyncMock(spec=SovereignClient)
         mock_sovereign.get_current_config.side_effect = ValueError("Control plane connection failed")

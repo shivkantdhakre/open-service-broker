@@ -13,15 +13,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sse_starlette.sse import EventSourceResponse  # type: ignore[import-untyped]
 from ulid import ULID
 
-from broker.dependencies import EventBusDep
-from broker.services.event_bus import Event
+from broker.dependencies import EventBusDep  # noqa: TC001
+from broker.services.event_bus import Event  # noqa: TC001
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 logger = structlog.get_logger()
 

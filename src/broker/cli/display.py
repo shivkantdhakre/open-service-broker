@@ -673,7 +673,6 @@ def display_approved_proposal(proposal: dict[str, Any]) -> None:
 
 def display_metrics(metrics: dict[str, Any]) -> None:
     """Display real-time pub/sub metrics in a visual panel."""
-    from rich.console import Group
 
     parse_success = metrics.get("intent_parse_success", 0)
     parse_failed = metrics.get("intent_parse_failed", 0)

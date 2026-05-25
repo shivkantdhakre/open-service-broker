@@ -174,6 +174,11 @@ resource "aws_lb_listener" "http" {
 # ---------------------------------------------------------------------------
 # ECS Tasks Definitions (API & Worker with OPA sidecar)
 # ---------------------------------------------------------------------------
+resource "aws_cloudwatch_log_group" "ecs" {
+  name              = "/aws/ecs/osb-${var.environment}"
+  retention_in_days = 30
+}
+
 resource "aws_ecs_task_definition" "api" {
   family                   = "osb-api-${var.environment}"
   network_mode             = "awsvpc"
@@ -205,6 +210,14 @@ resource "aws_ecs_task_definition" "api" {
         { name = "OPA_ENABLED", value = "true" },
         { name = "OPA_URL", value = "http://127.0.0.1:8181" }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/aws/ecs/osb-${var.environment}"
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "broker-api"
+        }
+      }
     },
     {
       name      = "opa-sidecar"
@@ -217,6 +230,14 @@ resource "aws_ecs_task_definition" "api" {
         }
       ]
       command = ["run", "--server", "--addr", ":8181"]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/aws/ecs/osb-${var.environment}"
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "opa"
+        }
+      }
     }
   ])
 }
@@ -244,6 +265,14 @@ resource "aws_ecs_task_definition" "worker" {
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.tasks.id },
         { name = "SQS_DLQ_URL", value = aws_sqs_queue.tasks_dlq.id }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/aws/ecs/osb-${var.environment}"
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "broker-worker"
+        }
+      }
     }
   ])
 }

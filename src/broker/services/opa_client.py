@@ -4,9 +4,10 @@ OPA Client — adapter to query local OPA policies over HTTP.
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 import structlog
-from typing import Any
 
 logger = structlog.get_logger()
 
@@ -65,7 +66,7 @@ class OPAClient:
                     )
                     return {
                         "is_valid": False,
-                        "errors": [f"Failed to reach Policy Engine in production: {str(e)}"],
+                        "errors": [f"Failed to reach Policy Engine in production: {e!s}"],
                     }
 
                 # Otherwise (local dev/staging), soft-enforce: log warning, allow config
@@ -76,5 +77,5 @@ class OPAClient:
                 return {
                     "is_valid": True,
                     "errors": [],
-                    "warnings": [f"Failed to reach Policy Engine: {str(e)}"],
+                    "warnings": [f"Failed to reach Policy Engine: {e!s}"],
                 }

@@ -5,10 +5,14 @@ request and response for distributed tracing and log correlation.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
 from ulid import ULID
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import Response
 
 REQUEST_ID_HEADER = "X-Request-ID"
 

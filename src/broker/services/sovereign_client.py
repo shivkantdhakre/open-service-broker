@@ -7,13 +7,14 @@ this client. Operations are idempotent for safe retries.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import structlog
 
-from broker.config import Settings
-from broker.schemas.sovereign import ClusterConfig, RateLimitConfig, RouteConfig
+if TYPE_CHECKING:
+    from broker.config import Settings
+    from broker.schemas.sovereign import ClusterConfig, RateLimitConfig, RouteConfig
 
 logger = structlog.get_logger()
 

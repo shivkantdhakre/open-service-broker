@@ -11,8 +11,7 @@ Verifies:
 from __future__ import annotations
 
 import base64
-import os
-from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,7 +19,6 @@ import pytest
 from broker.config import Settings
 from broker.schemas.maintenance import (
     CouplingReport,
-    DriftAlert,
     DriftSeverity,
     DriftType,
     RefactorProposal,
@@ -28,6 +26,9 @@ from broker.schemas.maintenance import (
 from broker.services.code_analyzer import CodeAnalyzer
 from broker.services.github_integration import GitHubAdapter, GitProviderAdapter
 from broker.services.maintenance_runner import MaintenanceRunner
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class MockGitProvider(GitProviderAdapter):
@@ -242,7 +243,7 @@ async def test_github_adapter_live_client_interactions() -> None:
             "new_file.py": "brand new content",
         }
         await adapter.commit_changes("feature/test-branch", "Commit files", file_changes)
-        
+
         # update_file verification
         mock_repo.update_file.assert_called_with(
             path="existing_file.py",
@@ -274,11 +275,11 @@ async def test_github_adapter_live_client_interactions() -> None:
 def test_approve_proposal_route():
     """Verify POST /api/v1/maintenance/proposals/{id}/approve enqueues SQS task."""
     from fastapi.testclient import TestClient
-    from broker.main import app
-    from broker.dependencies import get_sqs_service
-    from broker.services.refactoring_agent import RefactoringAgent
-    from broker.schemas.maintenance import RefactorProposal
+
     import broker.routers.maintenance as maint_router
+    from broker.dependencies import get_sqs_service
+    from broker.main import app
+    from broker.services.refactoring_agent import RefactoringAgent
 
     # Create mock SQS service
     mock_sqs = MagicMock()
@@ -295,7 +296,7 @@ def test_approve_proposal_route():
         estimated_effort="small",
         status="approved",
     )
-    
+
     mock_agent = MagicMock(spec=RefactoringAgent)
     mock_agent.approve_proposal = AsyncMock(return_value=mock_proposal)
     maint_router._refactoring_agent = mock_agent
@@ -304,9 +305,9 @@ def test_approve_proposal_route():
     app.dependency_overrides[get_sqs_service] = lambda: mock_sqs
 
     client = TestClient(app)
-    
+
     response = client.post("/api/v1/maintenance/proposals/proposal-123/approve")
-    
+
     assert response.status_code == 200
     res_data = response.json()
     assert res_data["proposal_id"] == "proposal-123"
@@ -318,7 +319,7 @@ def test_approve_proposal_route():
     assert called_task.task_type == "maintenance"
     assert called_task.resource_id == "proposal-123"
     assert called_task.configuration["proposal"]["proposal_id"] == "proposal-123"
-    
+
     # Clean up overrides
     app.dependency_overrides.clear()
     maint_router._refactoring_agent = None

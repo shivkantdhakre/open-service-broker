@@ -19,28 +19,28 @@ import sys
 from typing import Any
 
 import aioboto3
+import httpx
 import structlog
 
 from broker.config import get_settings
 from broker.schemas.resource import ResourceState
-from broker.schemas.task import SQSMessageWrapper, TaskType
-from broker.services.github_integration import GitHubAdapter
-from broker.services.dynamodb import DynamoDBService, InvalidStateTransitionError
-from broker.services.sovereign_client import SovereignClient, SovereignError
-from broker.services.sqs import SQSService
-import httpx
-from broker.services.event_bus import Event
 from broker.schemas.sovereign import (
-    RouteConfig,
-    RouteMatch,
-    WeightedCluster,
+    CircuitBreaker,
     ClusterConfig,
     Endpoint,
     HealthCheck,
-    CircuitBreaker,
     RateLimitConfig,
     RateLimitDescriptor,
+    RouteConfig,
+    RouteMatch,
+    WeightedCluster,
 )
+from broker.schemas.task import SQSMessageWrapper, TaskType
+from broker.services.dynamodb import DynamoDBService, InvalidStateTransitionError
+from broker.services.event_bus import Event
+from broker.services.github_integration import GitHubAdapter
+from broker.services.sovereign_client import SovereignClient, SovereignError
+from broker.services.sqs import SQSService
 
 # Configure structured logging
 structlog.configure(
@@ -619,12 +619,15 @@ class Worker:
 def run() -> None:
     """Entry point for the broker-worker script."""
     worker = Worker()
-
-    # Register signal handlers for graceful shutdown
     loop = asyncio.new_event_loop()
 
+    # Keep a reference to tasks to prevent garbage collection mid-execution
+    background_tasks: set[asyncio.Task[Any]] = set()
+
     def signal_handler() -> None:
-        loop.create_task(worker.stop())
+        task = loop.create_task(worker.stop())
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
 
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):

@@ -7,9 +7,9 @@ or accidental misconfigurations (wildcard routing, production deletions, sensiti
 
 from __future__ import annotations
 
-import httpx
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from broker.schemas.intent import IntentAction, ParsedConfiguration
 from broker.services.safety import SafetyService

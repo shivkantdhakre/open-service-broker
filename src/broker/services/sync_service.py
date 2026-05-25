@@ -6,15 +6,16 @@ Enables proxy drift detection and self-healing reporting.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
-from pydantic import BaseModel
 
 from broker.schemas.resource import ResourceRecord, ResourceState
-from broker.services.dynamodb import DynamoDBService
-from broker.services.sovereign_client import SovereignClient
 from broker.worker import Worker  # For _parse_target_config helper
+
+if TYPE_CHECKING:
+    from broker.services.dynamodb import DynamoDBService
+    from broker.services.sovereign_client import SovereignClient
 
 logger = structlog.get_logger()
 
@@ -98,7 +99,7 @@ class SovereignSyncService:
         ):
             record.sync_status = new_sync_status
             record.actual_state = new_actual_state
-            
+
             # Save changes to DynamoDB by updating the item
             table = await self._db._get_table()
             await table.update_item(
