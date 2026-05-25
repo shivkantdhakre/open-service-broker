@@ -7,7 +7,8 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir --upgrade pip
 
-COPY pyproject.toml ./
+# Add required packages
+COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 RUN pip install --no-cache-dir --prefix=/install .
