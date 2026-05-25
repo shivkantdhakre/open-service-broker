@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from boto3.dynamodb.conditions import Attr, Key  # type: ignore[import-untyped]
+from boto3.dynamodb.conditions import Attr, Key
 
 from broker.schemas.resource import VALID_TRANSITIONS, ResourceRecord, ResourceState
 

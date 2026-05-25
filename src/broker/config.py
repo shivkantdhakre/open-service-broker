@@ -119,7 +119,7 @@ class Settings(BaseSettings):
 
 def retrieve_secrets_from_manager(secret_name: str, region_name: str) -> dict[str, Any]:
     """Retrieve secrets from AWS Secrets Manager."""
-    import boto3  # type: ignore[import-untyped]
+    import boto3
     try:
         # Create a Secrets Manager client using default credentials chain
         client = boto3.client(

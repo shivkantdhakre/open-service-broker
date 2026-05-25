@@ -82,7 +82,7 @@ class MetricsCollector:
         Returns:
             List of TrafficMetric sorted by timestamp ascending.
         """
-        from boto3.dynamodb.conditions import Key  # type: ignore[import-untyped]
+        from boto3.dynamodb.conditions import Key
 
         table = await self._get_table()
         cutoff = (datetime.now(UTC) - timedelta(hours=window_hours)).isoformat()
