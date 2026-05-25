@@ -8,10 +8,11 @@ DELETE /{id}       — Initiate deprovisioning of a resource
 
 from __future__ import annotations
 
+from typing import Any
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from broker.dependencies import DynamoDBDep, EventBusDep, SQSDep
+from broker.dependencies import DynamoDBDep, EventBusDep, LLMDep, SafetyDep, SQSDep
 from broker.schemas.resource import ResourceRecord, ResourceState
 from broker.schemas.task import TaskMessage, TaskType
 from broker.services.dynamodb import ResourceNotFoundError
@@ -150,3 +151,46 @@ async def delete_resource(
         "resource_id": resource_id,
         "message": "Resource deprovisioning has been initiated.",
     }
+
+
+@router.post(
+    "/{resource_id}/auto-retry",
+    status_code=status.HTTP_200_OK,
+    summary="Trigger auto-retry for a failed resource configuration",
+)
+async def auto_retry_resource(
+    resource_id: str,
+    dynamodb: DynamoDBDep,
+    sqs: SQSDep,
+    llm: LLMDep,
+    safety: SafetyDep,
+    request: Request,
+) -> dict[str, Any]:
+    """Analyze a failed configuration, diagnose using LLM, and trigger retry."""
+    from broker.services.auto_retry_agent import AutoRetryAgent
+    
+    correlation_id = getattr(request.state, "request_id", None)
+    agent = AutoRetryAgent(dynamodb, sqs, llm, safety)
+    
+    try:
+        result = await agent.auto_retry_resource(resource_id, correlation_id)
+        if result.get("status") == "failed_validation":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "type": "auto_retry_validation_failed",
+                    "title": "LLM fix failed validation checks",
+                    "errors": result.get("errors"),
+                    "diagnosed_config": result.get("diagnosed_config"),
+                }
+            )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "type": "resource_not_found",
+                "title": "Resource not found or invalid",
+                "detail": str(e),
+            }
+        )

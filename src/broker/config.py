@@ -88,6 +88,12 @@ class Settings(BaseSettings):
     opa_enabled: bool = False
     opa_url: str = "http://localhost:8181"
 
+    # -------------------------------------------------------------------------
+    # Response Caching
+    # -------------------------------------------------------------------------
+    response_cache_enabled: bool = True
+    redis_url: str | None = None
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> list[str]:

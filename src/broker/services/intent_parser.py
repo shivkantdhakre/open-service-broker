@@ -37,6 +37,7 @@ from broker.schemas.sovereign import (
     RouteMatch,
     WeightedCluster,
 )
+import threading
 from broker.services.llm_gateway import LLMGateway, LLMParsingError
 from broker.services.safety import SafetyService
 
@@ -45,6 +46,10 @@ logger = structlog.get_logger()
 
 class IntentParserService:
     """Orchestrates the AI intent parsing pipeline with safety guardrails."""
+
+    # Class-level cache and lock for persistence across request-scoped instantiations
+    _cache: dict[str, Any] = {}
+    _cache_lock = threading.Lock()
 
     def __init__(self, llm_gateway: LLMGateway, safety_service: SafetyService) -> None:
         self._llm = llm_gateway
@@ -74,6 +79,60 @@ class IntentParserService:
 
         # Step 1: Sanitize input
         sanitized_input = self._sanitize_input(natural_language)
+
+        # Response Caching Check
+        from broker.config import get_settings
+        settings = get_settings()
+        cache_enabled = settings.response_cache_enabled
+        
+        cache_key = None
+        if cache_enabled:
+            import hashlib
+            import json
+            ctx_dump = json.dumps(context or {}, sort_keys=True)
+            key_raw = f"{sanitized_input.strip().lower()}||{ctx_dump}"
+            cache_key = hashlib.sha256(key_raw.encode("utf-8")).hexdigest()
+            
+            # 1. Check Redis first if url is configured
+            if settings.redis_url:
+                try:
+                    import redis.asyncio as aioredis
+                    r = aioredis.from_url(settings.redis_url, socket_timeout=1.0)
+                    cached_data = await r.get(f"intent_cache:{cache_key}")
+                    await r.close()
+                    if cached_data:
+                        await logger.ainfo("Redis cache hit: bypassing LLM parser call", prompt=natural_language)
+                        cached_resp = IntentResponse.model_validate_json(cached_data)
+                        return IntentResponse(
+                            request_id=str(ULID()),
+                            original_input=cached_resp.original_input,
+                            parsed_configuration=cached_resp.parsed_configuration,
+                            validation=cached_resp.validation,
+                            blast_radius=cached_resp.blast_radius,
+                            confidence_score=cached_resp.confidence_score,
+                            warnings=cached_resp.warnings,
+                            created_at=datetime.now(UTC),
+                        )
+                except ImportError:
+                    pass
+                except Exception as ex:
+                    await logger.awarning("Redis cache query failed, falling back to in-memory", error=str(ex))
+
+            # 2. Check In-Memory fallback
+            with self._cache_lock:
+                if cache_key in self._cache:
+                    await logger.ainfo("In-memory cache hit: bypassing LLM parser call", prompt=natural_language)
+                    cached_resp = self._cache[cache_key]
+                    return IntentResponse(
+                        request_id=str(ULID()),
+                        original_input=cached_resp.original_input,
+                        parsed_configuration=cached_resp.parsed_configuration,
+                        validation=cached_resp.validation,
+                        blast_radius=cached_resp.blast_radius,
+                        confidence_score=cached_resp.confidence_score,
+                        warnings=cached_resp.warnings,
+                        created_at=datetime.now(UTC),
+                    )
 
         # We keep track of the context and iterate up to 3 times to let the LLM self-correct
         current_context = (context or {}).copy()
@@ -153,7 +212,7 @@ class IntentParserService:
         if validation:
             warnings.extend(validation.warnings)
 
-        return IntentResponse(
+        response = IntentResponse(
             request_id=request_id,
             original_input=natural_language,
             parsed_configuration=parsed_config,
@@ -163,6 +222,26 @@ class IntentParserService:
             warnings=warnings,
             created_at=datetime.now(UTC),
         )
+
+        if cache_enabled and cache_key and validation.is_valid:
+            with self._cache_lock:
+                self._cache[cache_key] = response
+            if settings.redis_url:
+                try:
+                    import redis.asyncio as aioredis
+                    r = aioredis.from_url(settings.redis_url, socket_timeout=1.0)
+                    await r.setex(
+                        f"intent_cache:{cache_key}",
+                        3600,
+                        response.model_dump_json(),
+                    )
+                    await r.close()
+                except ImportError:
+                    pass
+                except Exception as ex:
+                    await logger.awarning("Failed to write to Redis cache", error=str(ex))
+
+        return response
 
     @retry(
         retry=retry_if_exception_type(LLMParsingError),
