@@ -21,6 +21,7 @@ from sse_starlette.sse import EventSourceResponse  # type: ignore[import-untyped
 from ulid import ULID
 
 from broker.dependencies import EventBusDep
+from broker.services.event_bus import Event
 
 logger = structlog.get_logger()
 
@@ -189,3 +190,18 @@ async def _ws_send(websocket: WebSocket, event_bus: EventBusDep, client_id: str)
 async def get_metrics(event_bus: EventBusDep) -> dict[str, int]:
     """Retrieve in-memory event bus metrics."""
     return event_bus.metrics
+
+
+@router.post(
+    "/publish",
+    status_code=200,
+    summary="Publish a custom event",
+    description="Allows internal background components (such as SQS worker) to publish events to the real-time event bus.",
+)
+async def publish_event(
+    event: Event,
+    event_bus: EventBusDep,
+) -> dict[str, str]:
+    """Publish an event to the pub/sub event bus."""
+    await event_bus.publish(event)
+    return {"status": "published"}

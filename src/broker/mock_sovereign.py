@@ -90,6 +90,15 @@ async def remove_route(route_name: str) -> dict[str, Any]:
 # -----------------------------------------------------------------------------
 # Clusters API
 # -----------------------------------------------------------------------------
+@app.get("/api/v1/clusters/{cluster_name}")
+async def get_cluster(cluster_name: str) -> dict[str, Any]:
+    """Retrieve a specific cluster configuration."""
+    if cluster_name not in clusters:
+        logger.warning("Cluster not found: %s", cluster_name)
+        raise HTTPException(status_code=404, detail=f"Cluster {cluster_name} not found")
+    return clusters[cluster_name]
+
+
 @app.put("/api/v1/clusters/{cluster_name}", status_code=200)
 async def apply_cluster(cluster_name: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Create or update an upstream cluster configuration (idempotent)."""
@@ -112,6 +121,15 @@ async def remove_cluster(cluster_name: str) -> dict[str, Any]:
 # -----------------------------------------------------------------------------
 # Rate Limits API
 # -----------------------------------------------------------------------------
+@app.get("/api/v1/rate-limits/{name}")
+async def get_rate_limit(name: str) -> dict[str, Any]:
+    """Retrieve a specific rate limit configuration."""
+    if name not in rate_limits:
+        logger.warning("Rate limit not found: %s", name)
+        raise HTTPException(status_code=404, detail=f"Rate limit {name} not found")
+    return rate_limits[name]
+
+
 @app.put("/api/v1/rate-limits/{name}", status_code=200)
 async def apply_rate_limit(name: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Create or update a rate limit rule configuration."""

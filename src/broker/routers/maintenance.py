@@ -10,7 +10,7 @@ POST /proposals/{id}/approve — Approve a proposal for PR generation
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request
 
 from broker.dependencies import LLMDep, SQSDep
 from broker.schemas.task import TaskMessage, TaskType
@@ -121,6 +121,7 @@ async def approve_proposal(
     proposal_id: str,
     llm: LLMDep,
     sqs: SQSDep,
+    fastapi_request: Request,
     approved_by: str = "api-user",
 ) -> RefactorProposal:
     """Approve a refactoring proposal for PR generation."""
@@ -137,6 +138,7 @@ async def approve_proposal(
         )
 
     # Enqueue a background task to process the refactoring PR
+    correlation_id = getattr(fastapi_request.state, "request_id", None)
     task = TaskMessage(
         task_id=f"maint-{proposal_id}",
         task_type=TaskType.MAINTENANCE,
@@ -145,6 +147,7 @@ async def approve_proposal(
             "proposal": proposal.model_dump(mode="json"),
             "dry_run": True,
         },
+        correlation_id=correlation_id,
     )
     await sqs.enqueue_task(task)
 

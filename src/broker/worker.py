@@ -28,6 +28,19 @@ from broker.services.github_integration import GitHubAdapter
 from broker.services.dynamodb import DynamoDBService, InvalidStateTransitionError
 from broker.services.sovereign_client import SovereignClient, SovereignError
 from broker.services.sqs import SQSService
+import httpx
+from broker.services.event_bus import Event
+from broker.schemas.sovereign import (
+    RouteConfig,
+    RouteMatch,
+    WeightedCluster,
+    ClusterConfig,
+    Endpoint,
+    HealthCheck,
+    CircuitBreaker,
+    RateLimitConfig,
+    RateLimitDescriptor,
+)
 
 # Configure structured logging
 structlog.configure(
@@ -60,6 +73,30 @@ class Worker:
             region_name=self._settings.aws_region,
         )
         self._sovereign: SovereignClient | None = None
+
+    async def _publish_event(self, event: Event) -> None:
+        """Publish an event to the API server's event bus."""
+        url = f"http://127.0.0.1:{self._settings.app_port}/api/v1/events/publish"
+        headers = {"Content-Type": "application/json"}
+        if self._settings.api_keys:
+            # Use the first API key from Settings.api_keys to authenticate
+            api_key = next(iter(self._settings.api_keys.keys()))
+            headers["X-API-Key"] = api_key
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    url,
+                    json=event.model_dump(mode="json"),
+                    headers=headers,
+                )
+                resp.raise_for_status()
+        except Exception as e:
+            await logger.awarning(
+                "Failed to publish event to API server",
+                url=url,
+                error=str(e),
+            )
 
     async def start(self) -> None:
         """Start the worker's main polling loop."""
@@ -112,6 +149,31 @@ class Worker:
             tasks = [self._process_message(sqs, msg) for msg in messages]
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def _send_to_dlq_and_alert(
+        self,
+        sqs: SQSService,
+        message: SQSMessageWrapper,
+        error_msg: str,
+    ) -> None:
+        """Send a failed message to DLQ and publish an anomaly event."""
+        task = message.body
+        await sqs.send_to_dlq(message, error_msg)
+
+        anomaly_event = Event(
+            event_type="anomaly",
+            resource_id=task.resource_id,
+            state="FAILED",
+            data={
+                "message": f"Task {task.task_id} failed and was routed to DLQ: {error_msg}",
+                "task_id": task.task_id,
+                "task_type": task.task_type,
+                "error": error_msg,
+                "receive_count": message.approximate_receive_count,
+                "correlation_id": task.correlation_id,
+            },
+        )
+        await self._publish_event(anomaly_event)
+
     async def _process_message(
         self,
         sqs: SQSService,
@@ -143,7 +205,7 @@ class Worker:
                     await self._handle_maintenance(task.resource_id, task.configuration)
                 case _:
                     await logger.aerror("Unknown task type", task_type=task.task_type)
-                    await sqs.send_to_dlq(message, f"Unknown task type: {task.task_type}")
+                    await self._send_to_dlq_and_alert(sqs, message, f"Unknown task type: {task.task_type}")
                     return
 
             # Success — delete message from queue
@@ -165,7 +227,7 @@ class Worker:
 
             # If max retries exceeded or maintenance task, send to DLQ
             if message.approximate_receive_count >= 3 or task.task_type == TaskType.MAINTENANCE:
-                await sqs.send_to_dlq(message, str(e))
+                await self._send_to_dlq_and_alert(sqs, message, str(e))
             # Otherwise, let visibility timeout re-queue it
 
         except Exception as e:
@@ -176,7 +238,139 @@ class Worker:
                 exc_info=True,
             )
             if message.approximate_receive_count >= 3 or task.task_type == TaskType.MAINTENANCE:
-                await sqs.send_to_dlq(message, str(e))
+                await self._send_to_dlq_and_alert(sqs, message, str(e))
+
+    def _parse_target_config(self, action: str, parameters: dict[str, Any], resource_id: str) -> Any:
+        """Parse configuration parameters into the corresponding Sovereign config schema."""
+        action = action.lower()
+        if action in ("create_route", "update_route"):
+            route_name = parameters.get("route_name") or resource_id
+
+            # Weighted clusters mapping
+            weighted_clusters = None
+            wc_raw = parameters.get("weighted_clusters")
+            if wc_raw:
+                weighted_clusters = [
+                    WeightedCluster(
+                        cluster_name=wc.get("cluster_name"),
+                        weight=wc.get("weight"),
+                    ) for wc in wc_raw
+                ]
+
+            match_config = RouteMatch(
+                prefix=parameters.get("prefix") or "/",
+                headers=parameters.get("headers") or {},
+                query_parameters=parameters.get("query_parameters") or {},
+            )
+
+            return RouteConfig(
+                route_name=route_name,
+                match=match_config,
+                target_cluster=parameters.get("target_cluster"),
+                weighted_clusters=weighted_clusters,
+                timeout_ms=parameters.get("timeout_ms") or 15000,
+                retry_on=parameters.get("retry_on"),
+                max_retries=parameters.get("max_retries") or 1,
+            )
+
+        elif action in ("create_cluster", "update_cluster"):
+            cluster_name = parameters.get("cluster_name") or resource_id
+
+            endpoints = []
+            endpoints_raw = parameters.get("endpoints") or []
+            for ep in endpoints_raw:
+                endpoints.append(Endpoint(
+                    address=ep.get("address"),
+                    port=ep.get("port"),
+                    health_check_port=ep.get("health_check_port"),
+                    weight=ep.get("weight") or 1,
+                ))
+
+            hc_raw = parameters.get("health_check")
+            health_check = None
+            if hc_raw:
+                health_check = HealthCheck(
+                    check_type=hc_raw.get("check_type") or "HTTP",
+                    path=hc_raw.get("path") or "/health",
+                    interval_ms=hc_raw.get("interval_ms") or 5000,
+                    timeout_ms=hc_raw.get("timeout_ms") or 3000,
+                    unhealthy_threshold=hc_raw.get("unhealthy_threshold") or 3,
+                    healthy_threshold=hc_raw.get("healthy_threshold") or 2,
+                )
+
+            cb_raw = parameters.get("circuit_breaker")
+            circuit_breaker = None
+            if cb_raw:
+                circuit_breaker = CircuitBreaker(
+                    max_connections=cb_raw.get("max_connections") or 1024,
+                    max_pending_requests=cb_raw.get("max_pending_requests") or 1024,
+                    max_requests=cb_raw.get("max_requests") or 1024,
+                    max_retries=cb_raw.get("max_retries") or 3,
+                )
+
+            return ClusterConfig(
+                cluster_name=cluster_name,
+                lb_policy=parameters.get("lb_policy") or "ROUND_ROBIN",
+                endpoints=endpoints,
+                health_check=health_check,
+                circuit_breaker=circuit_breaker,
+                connect_timeout_ms=parameters.get("connect_timeout_ms") or 5000,
+            )
+
+        elif action == "update_rate_limit":
+            name = parameters.get("name") or resource_id
+
+            descriptors = []
+            descriptors_raw = parameters.get("descriptors") or []
+            for desc in descriptors_raw:
+                descriptors.append(RateLimitDescriptor(
+                    key=desc.get("key"),
+                    value=desc.get("value"),
+                ))
+
+            return RateLimitConfig(
+                name=name,
+                target_route=parameters.get("target_route") or "",
+                requests_per_unit=parameters.get("requests_per_unit") or 1,
+                unit=parameters.get("unit") or "minute",
+                descriptors=descriptors,
+                shadow_mode=parameters.get("shadow_mode") or False,
+            )
+
+        return None
+
+    async def _get_existing_config(self, action: str, target_config: Any) -> dict[str, Any] | None:
+        """Fetch existing config from Sovereign based on config type."""
+        if not self._sovereign:
+            return None
+
+        action = action.lower()
+        try:
+            if action in ("create_route", "update_route"):
+                return await self._sovereign.get_route(target_config.route_name)
+            elif action in ("create_cluster", "update_cluster"):
+                return await self._sovereign.get_cluster(target_config.cluster_name)
+            elif action == "update_rate_limit":
+                return await self._sovereign.get_rate_limit(target_config.name)
+        except Exception as e:
+            await logger.awarning(
+                "Error checking existing Sovereign configuration",
+                error=str(e),
+            )
+        return None
+
+    async def _apply_config_to_sovereign(self, action: str, target_config: Any) -> None:
+        """Apply target config to Sovereign."""
+        if not self._sovereign:
+            return
+
+        action = action.lower()
+        if action in ("create_route", "update_route"):
+            await self._sovereign.apply_route(target_config)
+        elif action in ("create_cluster", "update_cluster"):
+            await self._sovereign.apply_cluster(target_config)
+        elif action == "update_rate_limit":
+            await self._sovereign.apply_rate_limit(target_config)
 
     async def _handle_provision(
         self,
@@ -204,6 +398,48 @@ class Worker:
             if resource is None:
                 raise ValueError(f"Resource {resource_id} not found")
 
+            # Parse target config and query Sovereign to see if it matches
+            action = configuration.get("action")
+            parameters = configuration.get("parameters", {})
+
+            target_config = None
+            if action:
+                target_config = self._parse_target_config(action, parameters, resource_id)
+
+            if target_config and self._sovereign:
+                existing_raw = await self._get_existing_config(action, target_config)
+                if existing_raw and target_config.model_dump(mode="json") == existing_raw:
+                    # Idempotency match! Self-heal.
+                    await logger.ainfo(
+                        "Idempotency match: configuration already exists and matches in Sovereign. Skipping write and self-healing state in DB.",
+                        resource_id=resource_id,
+                        action=action,
+                    )
+
+                    # Transition directly to ACTIVE using state machine path
+                    if resource.state == ResourceState.FAILED:
+                        resource = await db.update_state(
+                            resource_id=resource.resource_id,
+                            resource_type=resource.resource_type,
+                            new_state=ResourceState.PENDING,
+                            expected_version=resource.version,
+                        )
+                    if resource.state == ResourceState.PENDING:
+                        resource = await db.update_state(
+                            resource_id=resource.resource_id,
+                            resource_type=resource.resource_type,
+                            new_state=ResourceState.PROVISIONING,
+                            expected_version=resource.version,
+                        )
+                    if resource.state == ResourceState.PROVISIONING:
+                        await db.update_state(
+                            resource_id=resource.resource_id,
+                            resource_type=resource.resource_type,
+                            new_state=ResourceState.ACTIVE,
+                            expected_version=resource.version,
+                        )
+                    return
+
             # Transition to PROVISIONING (returns record with incremented version)
             resource = await db.update_state(
                 resource_id=resource.resource_id,
@@ -213,20 +449,14 @@ class Worker:
             )
 
             try:
-                # Apply to Sovereign (simulate if Sovereign is not available)
-                if self._sovereign:
-                    try:
-                        await self._sovereign.get_current_config()
-                        # If Sovereign is reachable, apply the config
-                        await logger.ainfo(
-                            "Applying configuration to Sovereign",
-                            resource_id=resource_id,
-                        )
-                    except SovereignError:
-                        await logger.awarning(
-                            "Sovereign not reachable, simulating provisioning",
-                            resource_id=resource_id,
-                        )
+                # Apply to Sovereign
+                if self._sovereign and target_config:
+                    await logger.ainfo(
+                        "Applying configuration to Sovereign",
+                        resource_id=resource_id,
+                        action=action,
+                    )
+                    await self._apply_config_to_sovereign(action, target_config)
 
                 # Simulate provisioning delay
                 await asyncio.sleep(1)

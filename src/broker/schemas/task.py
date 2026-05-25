@@ -43,6 +43,7 @@ class TaskMessage(BaseModel):
         le=10,
         description="Task priority (0 = normal, 10 = critical).",
     )
+    correlation_id: str | None = Field(default=None, description="Correlation identifier for distributed tracing.")
 
 
 class SQSMessageWrapper(BaseModel):

@@ -7,6 +7,8 @@ Mounts all routers and middleware.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,7 +25,7 @@ from broker.middleware.error_handler import register_exception_handlers
 from broker.middleware.logging import StructuredLoggingMiddleware
 from broker.middleware.request_id import RequestIdMiddleware
 from broker.routers import events, health, intent, maintenance, resources, scaling
-from broker.services.event_bus import EventBus
+from broker.services.event_bus import Event, EventBus
 
 # ---------------------------------------------------------------------------
 # Structured logging configuration
@@ -44,6 +46,49 @@ structlog.configure(
 )
 
 logger = structlog.get_logger()
+
+
+async def poll_dlq_depth(
+    event_bus: EventBus,
+    session: aioboto3.Session,
+    settings: Any,
+    interval: float = 60.0,
+) -> None:
+    """Periodically check the SQS DLQ depth and publish warning events if messages are present."""
+    await logger.ainfo("Starting DLQ poller background task", interval=interval)
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                async with session.client(
+                    "sqs",
+                    endpoint_url=settings.aws_endpoint_url,
+                    region_name=settings.aws_region,
+                ) as sqs:
+                    resp = await sqs.get_queue_attributes(
+                        QueueUrl=settings.sqs_dlq_url,
+                        AttributeNames=["ApproximateNumberOfMessages"],
+                    )
+                    depth = int(resp.get("Attributes", {}).get("ApproximateNumberOfMessages", 0))
+                    if depth > 0:
+                        await logger.awarning("SQS DLQ has active messages", depth=depth)
+                        anomaly_event = Event(
+                            event_type="anomaly",
+                            resource_id="dlq",
+                            state="FAILED",
+                            data={
+                                "message": f"DLQ '{settings.sqs_dlq_url}' has {depth} message(s) pending investigation.",
+                                "dlq_depth": depth,
+                                "queue_url": settings.sqs_dlq_url,
+                            },
+                        )
+                        await event_bus.publish(anomaly_event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                await logger.aerror("Error polling SQS DLQ depth", error=str(e))
+    except asyncio.CancelledError:
+        await logger.ainfo("DLQ poller background task stopped")
 
 
 # ---------------------------------------------------------------------------
@@ -76,10 +121,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         sqs_queue=settings.sqs_queue_url,
     )
 
+    # Start the SQS DLQ poller background task
+    poller_task = asyncio.create_task(
+        poll_dlq_depth(event_bus, session, settings, interval=60.0)
+    )
+    app.state.dlq_poller_task = poller_task
+
     yield
 
     # Shutdown
     await logger.ainfo("Shutting down Advanced AI Service Broker")
+    poller_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await poller_task
     await event_bus.shutdown()
 
 

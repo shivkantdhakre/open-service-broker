@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request
 
 from broker.dependencies import DynamoDBDep, EventBusDep, LLMDep, SafetyDep, SQSDep
 from broker.schemas.intent import (
@@ -108,18 +108,19 @@ async def parse_intent(
     ),
 )
 async def apply_intent(
-    request: IntentApplyRequest,
+    apply_req: IntentApplyRequest,
+    fastapi_request: Request,
     dynamodb: DynamoDBDep,
     sqs: SQSDep,
     event_bus: EventBusDep,
     safety: SafetyDep,
 ) -> dict[str, str]:
     """Queue a validated configuration for provisioning."""
-    config = request.parsed_configuration
+    config = apply_req.parsed_configuration
 
     # Re-validate before applying (defense in depth)
     validation = await safety.validate_config(config, None)
-    if not validation.is_valid and not request.force:
+    if not validation.is_valid and not apply_req.force:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
@@ -131,7 +132,7 @@ async def apply_intent(
 
     # Check blast radius
     blast_radius = await safety.simulate_blast_radius(config)
-    if not blast_radius.is_safe and not request.force:
+    if not blast_radius.is_safe and not apply_req.force:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
@@ -146,7 +147,7 @@ async def apply_intent(
     # Create resource record in PENDING state
     now = datetime.now(UTC)
     resource = ResourceRecord(
-        resource_id=request.request_id,
+        resource_id=apply_req.request_id,
         resource_type=config.action.value,
         state=ResourceState.PENDING,
         configuration=config.parameters,
@@ -156,13 +157,17 @@ async def apply_intent(
     )
     await dynamodb.create_resource(resource)
 
+    # Extract correlation ID from FastAPI request state
+    correlation_id = getattr(fastapi_request.state, "request_id", None)
+
     # Enqueue task for background processing
     task = TaskMessage(
-        task_id=request.request_id,
+        task_id=apply_req.request_id,
         task_type=TaskType.PROVISION,
-        resource_id=request.request_id,
+        resource_id=apply_req.request_id,
         configuration=config.model_dump(),
         requested_by="api",
+        correlation_id=correlation_id,
     )
     message_id = await sqs.enqueue_task(task)
 
@@ -176,8 +181,8 @@ async def apply_intent(
 
     return {
         "status": "accepted",
-        "request_id": request.request_id,
-        "resource_id": request.request_id,
+        "request_id": apply_req.request_id,
+        "resource_id": apply_req.request_id,
         "message": "Configuration has been queued for provisioning. "
         "Subscribe to /api/v1/events/stream for real-time updates.",
     }

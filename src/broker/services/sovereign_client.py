@@ -108,6 +108,26 @@ class SovereignClient:
                 return None
             raise
 
+    async def get_cluster(self, cluster_name: str) -> dict[str, Any] | None:
+        """Get a specific cluster configuration."""
+        try:
+            response = await self._request("GET", f"/api/v1/clusters/{cluster_name}")
+            return response  # type: ignore[return-value]
+        except SovereignError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+    async def get_rate_limit(self, name: str) -> dict[str, Any] | None:
+        """Get a specific rate limit configuration."""
+        try:
+            response = await self._request("GET", f"/api/v1/rate-limits/{name}")
+            return response  # type: ignore[return-value]
+        except SovereignError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
     # -------------------------------------------------------------------------
     # Internal HTTP helper
     # -------------------------------------------------------------------------

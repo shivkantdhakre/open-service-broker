@@ -182,3 +182,47 @@ class TestEventBus:
 
         # Clear override
         app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_publish_api_route(self):
+        """POST /api/v1/events/publish should publish the event to the event bus."""
+        from fastapi.testclient import TestClient
+        from broker.main import app
+        from broker.dependencies import get_event_bus
+        from broker.services.event_bus import EventBus
+
+        bus = EventBus()
+        app.dependency_overrides[get_event_bus] = lambda: bus
+
+        client = TestClient(app)
+        event_payload = {
+            "event_type": "anomaly",
+            "resource_id": "test-res",
+            "state": "FAILED",
+            "data": {"message": "something failed"}
+        }
+
+        # Subscribe to see if it publishes
+        received_events = []
+        async def mock_subscribe():
+            async for ev in bus.subscribe("test-sub"):
+                received_events.append(ev)
+                break
+
+        sub_task = asyncio.create_task(mock_subscribe())
+
+        # Give subscriber a tiny bit of time to register
+        await asyncio.sleep(0.01)
+
+        response = client.post("/api/v1/events/publish", json=event_payload)
+        assert response.status_code == 200
+        assert response.json() == {"status": "published"}
+
+        # Wait for subscriber task to complete
+        await asyncio.wait_for(sub_task, timeout=1.0)
+        assert len(received_events) == 1
+        assert received_events[0].event_type == "anomaly"
+        assert received_events[0].resource_id == "test-res"
+        assert received_events[0].data["message"] == "something failed"
+
+        app.dependency_overrides.clear()

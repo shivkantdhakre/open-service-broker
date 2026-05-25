@@ -48,6 +48,12 @@ class SQSService:
                     "DataType": "String",
                     "StringValue": task.resource_id,
                 },
+                **({
+                    "correlation_id": {
+                        "DataType": "String",
+                        "StringValue": task.correlation_id,
+                    }
+                } if task.correlation_id else {})
             },
         )
 
@@ -94,6 +100,12 @@ class SQSService:
         for msg in messages:
             try:
                 task = TaskMessage.model_validate_json(msg["Body"])
+                # Populate correlation_id from SQS message attributes if not already set in JSON body
+                msg_attrs = msg.get("MessageAttributes", {})
+                corr_id_attr = msg_attrs.get("correlation_id", {}).get("StringValue")
+                if corr_id_attr and not task.correlation_id:
+                    task.correlation_id = corr_id_attr
+
                 receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", 1))
 
                 wrapped.append(
