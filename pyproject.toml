@@ -52,6 +52,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "types-redis>=4.0.0",
+    "types-boto3",
     "flask",
     "moto[server,dynamodb,sqs]>=5.0.0",
 ]

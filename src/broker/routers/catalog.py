@@ -5,11 +5,10 @@ Catalog Router — exposes service discovery JSON endpoint and HTML documentatio
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
-
-from typing import Any
 
 router = APIRouter()
 

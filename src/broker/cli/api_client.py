@@ -11,12 +11,12 @@ import asyncio
 import json
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Coroutine
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Coroutine
 
     from broker.cli.config import CLIConfig
 
