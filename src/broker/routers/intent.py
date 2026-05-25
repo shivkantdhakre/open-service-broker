@@ -47,14 +47,29 @@ async def parse_intent(
     llm: LLMDep,
     safety: SafetyDep,
     event_bus: EventBusDep,
+    dynamodb: DynamoDBDep,
 ) -> IntentResponse:
     """Parse a natural language request into a validated configuration."""
+    # Fetch active resources to provide environment context to the AI
+    active_resources = await dynamodb.list_resources(state=ResourceState.ACTIVE)
+    env_context = []
+    for res in active_resources:
+        env_context.append({
+            "resource_id": res.resource_id,
+            "resource_type": res.resource_type,
+            "configuration": res.configuration,
+        })
+
+    # Merge into request context
+    context = (request.context or {}).copy()
+    context["active_resources"] = env_context
+
     parser = IntentParserService(llm, safety)
 
     try:
         response = await parser.parse_and_validate(
             natural_language=request.natural_language,
-            context=request.context,
+            context=context,
         )
         # Publish success event
         await event_bus.publish(
@@ -119,7 +134,7 @@ async def apply_intent(
     config = apply_req.parsed_configuration
 
     # Re-validate before applying (defense in depth)
-    validation = await safety.validate_config(config, None)
+    validation = await safety.validate_config(config, None, force=apply_req.force)
     if not validation.is_valid and not apply_req.force:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

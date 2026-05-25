@@ -55,7 +55,7 @@ class IntentParserService:
         natural_language: str,
         context: dict[str, Any] | None = None,
     ) -> IntentResponse:
-        """Execute the full NL → validated configuration pipeline.
+        """Execute the full NL → validated configuration pipeline with feedback loop.
 
         Args:
             natural_language: Developer's plain English request.
@@ -75,26 +75,68 @@ class IntentParserService:
         # Step 1: Sanitize input
         sanitized_input = self._sanitize_input(natural_language)
 
-        # Step 2: LLM translation with resilient retry
-        parsed_config = await self._call_llm_with_retry(sanitized_input, context)
-        confidence = await self._llm.get_confidence_score()
+        # We keep track of the context and iterate up to 3 times to let the LLM self-correct
+        current_context = (context or {}).copy()
 
-        await logger.ainfo(
-            "LLM translation completed",
-            request_id=request_id,
-            action=parsed_config.action,
-            target_service=parsed_config.target_service,
-            confidence=confidence,
-        )
+        max_attempts = 3
+        parsed_config = None
+        confidence = 0.0
+        sovereign_config = None
+        validation = None
+        blast_radius = None
 
-        # Step 3: Map to concrete Sovereign schema (validate structure)
-        sovereign_config = self._map_to_sovereign_schema(parsed_config)
+        for attempt in range(1, max_attempts + 1):
+            await logger.ainfo(
+                "Attempting translation",
+                request_id=request_id,
+                attempt=attempt,
+            )
 
-        # Step 4: Deterministic validation
-        validation = await self._safety.validate_config(parsed_config, sovereign_config)
+            # Step 2: LLM translation with resilient retry
+            parsed_config = await self._call_llm_with_retry(sanitized_input, current_context)
+            confidence = await self._llm.get_confidence_score()
 
-        # Step 5: Blast radius simulation
-        blast_radius = await self._safety.simulate_blast_radius(parsed_config)
+            await logger.ainfo(
+                "LLM translation completed",
+                request_id=request_id,
+                attempt=attempt,
+                action=parsed_config.action,
+                target_service=parsed_config.target_service,
+                confidence=confidence,
+            )
+
+            # Step 3: Map to concrete Sovereign schema (validate structure)
+            sovereign_config = self._map_to_sovereign_schema(parsed_config)
+
+            # Step 4: Deterministic validation
+            validation = await self._safety.validate_config(parsed_config, sovereign_config, context=current_context)
+
+            # Step 5: Blast radius simulation
+            blast_radius = await self._safety.simulate_blast_radius(parsed_config)
+
+            # If validation succeeds, we are done
+            if validation.is_valid:
+                break
+
+            # If we fail and have retries left, add feedback and retry
+            if attempt < max_attempts:
+                await logger.awarning(
+                    "Deterministic validation failed. Retrying with feedback loop.",
+                    request_id=request_id,
+                    attempt=attempt,
+                    errors=validation.errors,
+                )
+                current_context["validation_feedback"] = {
+                    "previous_errors": validation.errors,
+                    "previous_warnings": validation.warnings,
+                    "message": "The configuration you generated failed validation with the errors listed above. Please correct them and regenerate.",
+                }
+            else:
+                await logger.aerror(
+                    "Deterministic validation failed after maximum feedback attempts",
+                    request_id=request_id,
+                    errors=validation.errors,
+                )
 
         # Collect warnings
         warnings: list[str] = []
@@ -103,12 +145,13 @@ class IntentParserService:
                 f"Low confidence score ({confidence:.2f}). "
                 "Review the parsed configuration carefully before applying."
             )
-        if blast_radius.risk_score > 0.5:
+        if blast_radius and blast_radius.risk_score > 0.5:
             warnings.append(
                 f"Elevated blast radius risk ({blast_radius.risk_score:.2f}). "
                 f"Affected services: {', '.join(blast_radius.affected_services)}"
             )
-        warnings.extend(validation.warnings)
+        if validation:
+            warnings.extend(validation.warnings)
 
         return IntentResponse(
             request_id=request_id,

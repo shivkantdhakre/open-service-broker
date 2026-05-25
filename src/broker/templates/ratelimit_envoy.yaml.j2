@@ -1,0 +1,15 @@
+# Envoy Rate Limit Filter Configuration
+rate_limit_rule:
+  name: "{{ name }}"
+  domain: "{{ target_route }}"
+  descriptors:
+    {%- for desc in descriptors %}
+    - key: "{{ desc.key }}"
+      {%- if desc.value %}
+      value: "{{ desc.value }}"
+      {%- endif %}
+    {%- endfor %}
+  rate_limit:
+    unit: "{{ unit | upper }}"
+    requests_per_unit: {{ requests_per_unit }}
+  shadow_mode: {{ 'true' if shadow_mode else 'false' }}

@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     scaling_confidence_threshold: float = 0.8
     scaling_cooldown_seconds: int = 300
 
+    # -------------------------------------------------------------------------
+    # OPA Compliance
+    # -------------------------------------------------------------------------
+    opa_enabled: bool = False
+    opa_url: str = "http://localhost:8181"
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> list[str]:

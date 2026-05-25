@@ -24,7 +24,7 @@ from broker.middleware.api_key import APIKeyMiddleware
 from broker.middleware.error_handler import register_exception_handlers
 from broker.middleware.logging import StructuredLoggingMiddleware
 from broker.middleware.request_id import RequestIdMiddleware
-from broker.routers import events, health, intent, maintenance, resources, scaling
+from broker.routers import catalog, events, health, intent, maintenance, resources, scaling
 from broker.services.event_bus import Event, EventBus
 
 # ---------------------------------------------------------------------------
@@ -91,6 +91,40 @@ async def poll_dlq_depth(
         await logger.ainfo("DLQ poller background task stopped")
 
 
+async def poll_edge_sync(
+    session: aioboto3.Session,
+    settings: Any,
+    interval: float = 120.0,
+) -> None:
+    """Periodically execute desired-actual state synchronization against Sovereign."""
+    from broker.services.dynamodb import DynamoDBService
+    from broker.services.sovereign_client import SovereignClient
+    from broker.services.sync_service import SovereignSyncService
+
+    await logger.ainfo("Starting edge state synchronization background task", interval=interval)
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                # Initialize connections
+                sovereign = SovereignClient(settings)
+                async with session.resource(
+                    "dynamodb",
+                    endpoint_url=settings.aws_endpoint_url,
+                    region_name=settings.aws_region,
+                ) as dynamodb_res:
+                    db = DynamoDBService(dynamodb_res, settings)
+                    sync_service = SovereignSyncService(db, sovereign)
+                    await sync_service.sync_all_resources()
+                await sovereign.close()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                await logger.aerror("Error during background edge state synchronization", error=str(e))
+    except asyncio.CancelledError:
+        await logger.ainfo("Edge state synchronization background task stopped")
+
+
 # ---------------------------------------------------------------------------
 # Application lifespan — startup / shutdown
 # ---------------------------------------------------------------------------
@@ -127,13 +161,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.dlq_poller_task = poller_task
 
+    # Start the Edge Sync poller background task
+    sync_task = asyncio.create_task(
+        poll_edge_sync(session, settings, interval=120.0)
+    )
+    app.state.edge_sync_task = sync_task
+
     yield
 
     # Shutdown
     await logger.ainfo("Shutting down Advanced AI Service Broker")
     poller_task.cancel()
+    sync_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
-        await poller_task
+        await asyncio.gather(poller_task, sync_task, return_exceptions=True)
     await event_bus.shutdown()
 
 
@@ -173,6 +214,7 @@ def create_app() -> FastAPI:
 
     # -- Routers --
     app.include_router(health.router)
+    app.include_router(catalog.router)
     app.include_router(intent.router, prefix="/api/v1/intent", tags=["Intent Parsing"])
     app.include_router(resources.router, prefix="/api/v1/resources", tags=["Resources"])
     app.include_router(events.router, prefix="/api/v1/events", tags=["Events"])

@@ -1,0 +1,35 @@
+# Envoy CDS Cluster Configuration
+cluster:
+  name: "{{ cluster_name }}"
+  connect_timeout: "{{ connect_timeout_ms }}ms"
+  lb_policy: "{{ lb_policy }}"
+  type: STRICT_DNS
+  load_assignment:
+    cluster_name: "{{ cluster_name }}"
+    endpoints:
+      - lb_endpoints:
+          {%- for endpoint in endpoints %}
+          - endpoint:
+              address:
+                socket_address:
+                  address: "{{ endpoint.address }}"
+                  port_value: {{ endpoint.port }}
+            load_balancing_weight: {{ endpoint.weight }}
+          {%- endfor %}
+  {%- if health_check %}
+  health_checks:
+    - timeout: "{{ health_check.timeout_ms }}ms"
+      interval: "{{ health_check.interval_ms }}ms"
+      unhealthy_threshold: {{ health_check.unhealthy_threshold }}
+      healthy_threshold: {{ health_check.healthy_threshold }}
+      http_health_check:
+        path: "{{ health_check.path }}"
+  {%- endif %}
+  {%- if circuit_breaker %}
+  thresholds:
+    - priority: DEFAULT
+      max_connections: {{ circuit_breaker.max_connections }}
+      max_pending_requests: {{ circuit_breaker.max_pending_requests }}
+      max_requests: {{ circuit_breaker.max_requests }}
+      max_retries: {{ circuit_breaker.max_retries }}
+  {%- endif %}

@@ -66,6 +66,14 @@ class ResourceRecord(BaseModel):
         default=None,
         description="Error details if state is FAILED.",
     )
+    actual_state: ResourceState | None = Field(
+        default=None,
+        description="Actual state of the resource on edge proxy.",
+    )
+    sync_status: str | None = Field(
+        default=None,
+        description="Sync status of desired vs actual state (e.g. IN_SYNC, DRIFTED, ABSENT).",
+    )
 
     def can_transition_to(self, new_state: ResourceState) -> bool:
         """Check if transitioning to the new state is valid."""
@@ -84,6 +92,8 @@ class ResourceRecord(BaseModel):
             "version": self.version,
             "metadata": self.metadata,
             "error_message": self.error_message,
+            "actual_state": self.actual_state.value if self.actual_state else None,
+            "sync_status": self.sync_status,
         }
 
     @classmethod
@@ -100,4 +110,6 @@ class ResourceRecord(BaseModel):
             version=int(item.get("version", 1)),
             metadata=item.get("metadata", {}),
             error_message=item.get("error_message"),
+            actual_state=ResourceState(item["actual_state"]) if item.get("actual_state") else None,
+            sync_status=item.get("sync_status"),
         )

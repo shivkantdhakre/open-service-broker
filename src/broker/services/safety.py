@@ -84,17 +84,23 @@ class SafetyService:
         """Initialize with DynamoDB access for current state comparison."""
         self._db = dynamodb_service
         self._settings = settings
+        from broker.services.opa_client import OPAClient
+        self._opa_client = OPAClient(settings.opa_url)
 
     async def validate_config(
         self,
         parsed: ParsedConfiguration,
         sovereign_config: BaseModel | None,
+        context: dict[str, Any] | None = None,
+        force: bool = False,
     ) -> ValidationResult:
         """Validate a parsed configuration against deterministic rules.
 
         Args:
             parsed: The AI-generated parsed configuration.
             sovereign_config: The mapped Sovereign schema (if applicable).
+            context: Optional context metadata for policy evaluation.
+            force: Force bypass flag.
 
         Returns:
             ValidationResult with errors and warnings.
@@ -139,6 +145,26 @@ class SafetyService:
         # Rule 5: Action-specific parameter validation
         action_errors = self._validate_action_parameters(parsed)
         errors.extend(action_errors)
+
+        # OPA Policy Engine scanning if enabled
+        if self._settings.opa_enabled:
+            blast_radius = await self.simulate_blast_radius(parsed)
+            opa_res = await self._opa_client.evaluate_policy(
+                action=parsed.action.value if hasattr(parsed.action, "value") else str(parsed.action),
+                parameters=parsed.parameters.model_dump(exclude_none=True),
+                blast_radius={
+                    "risk_score": blast_radius.risk_score,
+                    "affected_services": blast_radius.affected_services,
+                    "affected_routes": blast_radius.affected_routes,
+                    "is_safe": blast_radius.is_safe,
+                },
+                context=context,
+                force=force,
+            )
+            if not opa_res.get("is_valid", False):
+                errors.extend(opa_res.get("errors", []))
+            if opa_res.get("warnings"):
+                warnings.extend(opa_res.get("warnings", []))
 
         is_valid = len(errors) == 0
 

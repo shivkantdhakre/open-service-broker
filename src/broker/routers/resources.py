@@ -9,16 +9,38 @@ DELETE /{id}       — Initiate deprovisioning of a resource
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from broker.dependencies import DynamoDBDep, EventBusDep, SQSDep
 from broker.schemas.resource import ResourceRecord, ResourceState
 from broker.schemas.task import TaskMessage, TaskType
 from broker.services.dynamodb import ResourceNotFoundError
+from broker.services.sovereign_client import SovereignClient
+from broker.services.sync_service import SovereignSyncService
 
 logger = structlog.get_logger()
 
 router = APIRouter()
+
+
+@router.post(
+    "/sync",
+    response_model=list[ResourceRecord],
+    summary="Trigger manual desired-actual state synchronization",
+)
+async def manual_sync_resources(
+    dynamodb: DynamoDBDep,
+    request: Request,
+) -> list[ResourceRecord]:
+    """Manually trigger edge proxy configuration sync and detect drift."""
+    settings = request.app.state.settings
+    sovereign = SovereignClient(settings)
+    try:
+        sync_service = SovereignSyncService(dynamodb, sovereign)
+        updated = await sync_service.sync_all_resources()
+        return updated
+    finally:
+        await sovereign.close()
 
 
 @router.get(

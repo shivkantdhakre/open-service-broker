@@ -1,0 +1,47 @@
+# Envoy RDS Route Configuration
+route_config:
+  name: "{{ route_name }}"
+  virtual_hosts:
+    - name: "{{ route_name }}_vhost"
+      domains: ["*"]
+      routes:
+        - match:
+            prefix: "{{ match.prefix }}"
+            {%- if match.headers %}
+            headers:
+              {%- for name, value in match.headers.items() %}
+              - name: "{{ name }}"
+                exact_match: "{{ value }}"
+              {%- endfor %}
+            {%- endif %}
+            {%- if match.query_parameters %}
+            query_parameters:
+              {%- for name, value in match.query_parameters.items() %}
+              - name: "{{ name }}"
+                exact_match: "{{ value }}"
+              {%- endfor %}
+            {%- endif %}
+          {%- if target_cluster %}
+          route:
+            cluster: "{{ target_cluster }}"
+            timeout: "{{ timeout_ms }}ms"
+            {%- if retry_on %}
+            retry_policy:
+              retry_on: "{{ retry_on }}"
+              num_retries: {{ max_retries }}
+            {%- endif %}
+          {%- elif weighted_clusters %}
+          route:
+            weighted_clusters:
+              clusters:
+                {%- for wc in weighted_clusters %}
+                - name: "{{ wc.cluster_name }}"
+                  weight: {{ wc.weight }}
+                {%- endfor %}
+            timeout: "{{ timeout_ms }}ms"
+            {%- if retry_on %}
+            retry_policy:
+              retry_on: "{{ retry_on }}"
+              num_retries: {{ max_retries }}
+            {%- endif %}
+          {%- endif %}
