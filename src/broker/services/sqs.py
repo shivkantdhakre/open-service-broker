@@ -69,7 +69,7 @@ class SQSService:
             resource_id=task.resource_id,
         )
 
-        return message_id
+        return str(message_id)
 
     async def receive_tasks(
         self,

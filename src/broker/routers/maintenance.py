@@ -33,7 +33,7 @@ _refactoring_agent: RefactoringAgent | None = None
 _latest_drift_alerts: list[DriftAlert] = []
 
 
-def _get_refactoring_agent(llm: LLMDep) -> RefactoringAgent:  # type: ignore[arg-type]
+def _get_refactoring_agent(llm: LLMDep) -> RefactoringAgent:
     """Get or create the refactoring agent singleton."""
     global _refactoring_agent
     if _refactoring_agent is None:

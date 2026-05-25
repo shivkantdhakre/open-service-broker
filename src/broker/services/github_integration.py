@@ -70,7 +70,7 @@ class GitHubAdapter(GitProviderAdapter):
         """Lazy load PyGithub client."""
         if self._client is None:
             try:
-                from github import Github
+                from github import Github  # type: ignore[import-not-found]
             except ImportError as e:
                 raise ImportError(
                     "PyGithub is required for GitHub integration. "

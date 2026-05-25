@@ -11,7 +11,7 @@ import asyncio
 import json
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Coroutine
 
 import httpx
 
@@ -338,7 +338,7 @@ class BrokerAPIClient:
             ) from e
 
 
-def run_async(coro):  # type: ignore[no-untyped-def]
+def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
     """Run an async coroutine in a new event loop.
 
     Works around Windows-specific issues with ``asyncio.run`` by forcing

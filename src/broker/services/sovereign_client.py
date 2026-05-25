@@ -97,13 +97,13 @@ class SovereignClient:
     async def get_current_config(self) -> dict[str, Any]:
         """Get the complete current configuration from Sovereign."""
         response = await self._request("GET", "/api/v1/config")
-        return response  # type: ignore[return-value]
+        return response or {}
 
     async def get_route(self, route_name: str) -> dict[str, Any] | None:
         """Get a specific route configuration."""
         try:
             response = await self._request("GET", f"/api/v1/routes/{route_name}")
-            return response  # type: ignore[return-value]
+            return response
         except SovereignError as e:
             if e.status_code == 404:
                 return None
@@ -113,7 +113,7 @@ class SovereignClient:
         """Get a specific cluster configuration."""
         try:
             response = await self._request("GET", f"/api/v1/clusters/{cluster_name}")
-            return response  # type: ignore[return-value]
+            return response
         except SovereignError as e:
             if e.status_code == 404:
                 return None
@@ -123,7 +123,7 @@ class SovereignClient:
         """Get a specific rate limit configuration."""
         try:
             response = await self._request("GET", f"/api/v1/rate-limits/{name}")
-            return response  # type: ignore[return-value]
+            return response
         except SovereignError as e:
             if e.status_code == 404:
                 return None

@@ -14,8 +14,8 @@ if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     os.environ.setdefault("PYTHONUTF8", "1")
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+        getattr(sys.stderr, "reconfigure")(encoding="utf-8")
     except AttributeError:
         pass
 
@@ -57,11 +57,11 @@ async def run_analyze(args: argparse.Namespace) -> int:
             ]
         }
         print(json.dumps(out, indent=2))
-        return result["severity_level"]
+        return int(result["severity_level"])
 
     if args.output == "markdown":
         print(result["report_md"])
-        return result["severity_level"]
+        return int(result["severity_level"])
 
     # Human-readable output
     print("\n" + "=" * 60)
@@ -87,7 +87,7 @@ async def run_analyze(args: argparse.Namespace) -> int:
             print(f"  ↳ Description: {a.description}")
             print(f"  ↳ Suggested:   {a.suggested_action}\n")
 
-    return result["severity_level"]
+    return int(result["severity_level"])
 
 
 async def run_propose(args: argparse.Namespace) -> int:

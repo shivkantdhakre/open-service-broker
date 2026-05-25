@@ -222,7 +222,7 @@ async def get_intent_history(
             IntentHistoryItem(
                 request_id=resource.resource_id,
                 original_input=resource.metadata.get("original_input", ""),
-                action=resource.resource_type,  # type: ignore[arg-type]
+                action=resource.resource_type,
                 target_service=resource.metadata.get("target_service", ""),
                 status=resource.state.value,
                 created_at=resource.created_at,

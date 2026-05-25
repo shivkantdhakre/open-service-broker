@@ -103,8 +103,8 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, v: Any) -> list[str]:
         """Accept both JSON array strings and Python lists."""
         if isinstance(v, str):
-            return json.loads(v)  # type: ignore[return-value]
-        return v
+            return json.loads(v)  # type: ignore[no-any-return]
+        return v  # type: ignore[no-any-return]
 
     @field_validator("api_keys", mode="before")
     @classmethod
@@ -113,13 +113,13 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             if not v.strip():
                 return {}
-            return json.loads(v)  # type: ignore[return-value]
-        return v
+            return json.loads(v)  # type: ignore[no-any-return]
+        return v  # type: ignore[no-any-return]
 
 
 def retrieve_secrets_from_manager(secret_name: str, region_name: str) -> dict[str, Any]:
     """Retrieve secrets from AWS Secrets Manager."""
-    import boto3
+    import boto3  # type: ignore[import-untyped]
     try:
         # Create a Secrets Manager client using default credentials chain
         client = boto3.client(

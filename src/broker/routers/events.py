@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-from sse_starlette.sse import EventSourceResponse  # type: ignore[import-untyped]
+from sse_starlette.sse import EventSourceResponse, ServerSentEvent  # type: ignore[attr-defined]
 from ulid import ULID
 
 from broker.dependencies import EventBusDep  # noqa: TC001
@@ -77,7 +77,7 @@ async def event_stream(
             "Cache-Control": "no-cache",
         },
         ping=15,  # Heartbeat every 15 seconds
-        ping_message_factory=lambda: "heartbeat",
+        ping_message_factory=lambda: ServerSentEvent(data="heartbeat"),
     )
 
 
@@ -166,7 +166,7 @@ async def _ws_receive(websocket: WebSocket, client_id: str) -> None:
         pass
 
 
-async def _ws_send(websocket: WebSocket, event_bus: EventBusDep, client_id: str) -> None:  # type: ignore[arg-type]
+async def _ws_send(websocket: WebSocket, event_bus: EventBusDep, client_id: str) -> None:
     """Send events from the event bus to the WebSocket client."""
     try:
         async for event in event_bus.subscribe(client_id):

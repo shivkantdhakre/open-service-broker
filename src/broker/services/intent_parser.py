@@ -225,7 +225,7 @@ class IntentParserService:
             created_at=datetime.now(UTC),
         )
 
-        if cache_enabled and cache_key and validation.is_valid:
+        if cache_enabled and cache_key and validation and validation.is_valid:
             with self._cache_lock:
                 self._cache[cache_key] = response
             if settings.redis_url:

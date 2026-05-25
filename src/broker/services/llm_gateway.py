@@ -282,7 +282,7 @@ class OpenAIGateway(LLMGateway):
 # ---------------------------------------------------------------------------
 # Schema sanitization helpers for Gemini structured outputs
 # ---------------------------------------------------------------------------
-def _inline_refs(schema_dict: dict, defs: dict | None = None) -> dict:
+def _inline_refs(schema_dict: dict[str, Any], defs: dict[str, Any] | None = None) -> dict[str, Any]:
     """Recursively inline all ``$ref`` pointers using the top-level ``$defs``."""
     import copy as _copy
 
@@ -314,7 +314,7 @@ def _inline_refs(schema_dict: dict, defs: dict | None = None) -> dict:
     return schema_dict
 
 
-def _resolve_anyof(schema_dict: dict) -> dict:
+def _resolve_anyof(schema_dict: dict[str, Any]) -> dict[str, Any]:
     """Convert ``anyOf: [{type: T}, {type: null}]`` → ``{type: T, nullable: true}``."""
     if not isinstance(schema_dict, dict):
         return schema_dict
@@ -348,7 +348,7 @@ _UNSUPPORTED_SCHEMA_KEYS = frozenset({
 })
 
 
-def _clean_schema(schema_dict: dict) -> None:
+def _clean_schema(schema_dict: dict[str, Any]) -> None:
     """Recursively strip keys that Gemini's protobuf Schema rejects."""
     if not isinstance(schema_dict, dict):
         return
@@ -365,7 +365,7 @@ def _clean_schema(schema_dict: dict) -> None:
                     _clean_schema(item)
 
 
-def _pydantic_to_gemini_schema(model_cls: type[BaseModel]) -> dict:
+def _pydantic_to_gemini_schema(model_cls: type[BaseModel]) -> dict[str, Any]:
     """Convert a Pydantic model class into a Gemini-compatible JSON schema dict."""
     schema = model_cls.model_json_schema()
     schema = _inline_refs(schema)
@@ -391,18 +391,18 @@ class GeminiGateway(LLMGateway):
         if self._model is None:
             import google.generativeai as genai
 
-            genai.configure(api_key=self._settings.llm_api_key)
+            genai.configure(api_key=self._settings.llm_api_key)  # type: ignore[attr-defined]
 
             response_schema = _pydantic_to_gemini_schema(ParsedConfiguration)
 
-            generation_config = genai.GenerationConfig(
+            generation_config = genai.GenerationConfig(  # type: ignore[attr-defined]
                 response_mime_type="application/json",
                 response_schema=response_schema,
                 temperature=self._settings.llm_temperature,
                 max_output_tokens=self._settings.llm_max_tokens,
             )
 
-            self._model = genai.GenerativeModel(
+            self._model = genai.GenerativeModel(  # type: ignore[attr-defined]
                 model_name=self._settings.llm_model,
                 generation_config=generation_config,
                 system_instruction=INTENT_SYSTEM_PROMPT,

@@ -9,9 +9,11 @@ import json
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
+from typing import Any
+
 router = APIRouter()
 
-CATALOG_SERVICES = [
+CATALOG_SERVICES: list[dict[str, Any]] = [
     {
         "id": "routing-rule",
         "name": "Routing Rule (RDS)",
@@ -99,7 +101,7 @@ CATALOG_SERVICES = [
 
 
 @router.get("/api/v1/catalog", summary="Get service discovery schemas")
-async def get_catalog_schemas() -> list[dict]:
+async def get_catalog_schemas() -> list[dict[str, Any]]:
     """Return JSON schema definitions of all support provisioned resources."""
     return CATALOG_SERVICES
 

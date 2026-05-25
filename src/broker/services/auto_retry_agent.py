@@ -4,6 +4,7 @@ Auto-Retry Agent — LLM-driven self-healing for failed provisioning configurati
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -146,7 +147,7 @@ class AutoRetryAgent:
                     ":config": updated_config,
                     ":inc_one": 1,
                     ":null_val": None,
-                    ":now": self._db._now_iso(),
+                    ":now": datetime.now(UTC).isoformat(),
                 },
             )
             await logger.ainfo(

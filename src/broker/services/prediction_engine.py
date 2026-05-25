@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import structlog
-from sklearn.ensemble import IsolationForest  # type: ignore[import-untyped]
-from sklearn.linear_model import LinearRegression  # type: ignore[import-untyped]
+from sklearn.ensemble import IsolationForest
+from sklearn.linear_model import LinearRegression
 from ulid import ULID
 
 from broker.schemas.metrics import (

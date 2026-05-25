@@ -398,13 +398,13 @@ class Worker:
             if resource is None:
                 raise ValueError(f"Resource {resource_id} not found")
 
-            # Parse target config and query Sovereign to see if it matches
             action = configuration.get("action")
             parameters = configuration.get("parameters", {})
 
-            target_config = None
-            if action:
-                target_config = self._parse_target_config(action, parameters, resource_id)
+            if not isinstance(action, str):
+                raise ValueError("Action must be a string")
+
+            target_config = self._parse_target_config(action, parameters, resource_id)
 
             if target_config and self._sovereign:
                 existing_raw = await self._get_existing_config(action, target_config)

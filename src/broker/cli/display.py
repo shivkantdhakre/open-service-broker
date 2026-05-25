@@ -20,8 +20,8 @@ if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     os.environ.setdefault("PYTHONUTF8", "1")
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+        getattr(sys.stderr, "reconfigure")(encoding="utf-8")
     except AttributeError:
         pass
 
