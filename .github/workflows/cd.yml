@@ -50,11 +50,15 @@ jobs:
 
       - name: Download and Sanitize API Task Definition
         run: |
+          echo "Attempting to fetch task definition: ${{ env.ECS_SERVICE_API }}"
+          aws ecs list-task-definitions --region ${{ env.AWS_REGION }} | jq '.taskDefinitionArns'
           aws ecs describe-task-definition --task-definition ${{ env.ECS_SERVICE_API }} --region ${{ env.AWS_REGION }} --query taskDefinition --output json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > task-def-api.json
           if [ ! -s task-def-api.json ]; then echo "::error::Failed to fetch API task definition. Check permissions and name."; exit 1; fi
 
       - name: Download and Sanitize Worker Task Definition
         run: |
+          echo "Attempting to fetch task definition: ${{ env.ECS_SERVICE_WORKER }}"
+          aws ecs list-task-definitions --region ${{ env.AWS_REGION }} | jq '.taskDefinitionArns'
           aws ecs describe-task-definition --task-definition ${{ env.ECS_SERVICE_WORKER }} --region ${{ env.AWS_REGION }} --query taskDefinition --output json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > task-def-worker.json
           if [ ! -s task-def-worker.json ]; then echo "::error::Failed to fetch Worker task definition. Check permissions and name."; exit 1; fi
 
