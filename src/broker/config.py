@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     aws_endpoint_url: str | None = "http://localhost:4566"
     aws_region: str = "us-east-1"
-    aws_access_key_id: str = "test"
-    aws_secret_access_key: str = "test"
+    aws_access_key_id: str | None = "test"
+    aws_secret_access_key: str | None = "test"
 
     # DynamoDB
     dynamodb_table_name: str = "broker-resources"
@@ -50,9 +50,9 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # LLM / AI
     # -------------------------------------------------------------------------
-    llm_provider: str = "openai"
+    llm_provider: str = "gemini"
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o"
+    llm_model: str = "gemini-3.5-flash"
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.1
 
@@ -143,29 +143,25 @@ def get_settings() -> Settings:
     """Return a cached singleton of application settings."""
     settings = Settings()
     if settings.production_mode:
-        # Override endpoint URL to None for real AWS connection
-        settings.aws_endpoint_url = None
-
+        # Override AWS credentials/endpoints to None for real AWS connection (standard credentials chain)
         # Retrieve secrets from AWS Secrets Manager
         secrets = retrieve_secrets_from_manager(settings.aws_secret_name, settings.aws_region)
+
+        # Prepare updates dictionary
+        updates: dict[str, Any] = {
+            "aws_endpoint_url": None,
+            "aws_access_key_id": None,
+            "aws_secret_access_key": None,
+        }
         for key, value in secrets.items():
             key_lower = key.lower()
-            if hasattr(settings, key_lower):
-                # Handle dictionary / list field parsing if stringified in secret
-                if key_lower in ("api_keys", "cors_origins") and isinstance(value, str):
-                    with contextlib.suppress(Exception):
-                        value = json.loads(value)
+            if key_lower in settings.model_fields:
+                updates[key_lower] = value
 
-                # Check annotations and handle type casting if necessary
-                field_type = settings.model_fields[key_lower].annotation
-                if field_type is int:
-                    with contextlib.suppress(Exception):
-                        value = int(value)
-                elif field_type is float:
-                    with contextlib.suppress(Exception):
-                        value = float(value)
-                elif field_type is bool and isinstance(value, str):
-                    value = value.lower() in ("true", "1", "yes")
+        # Validate and build new settings instance Pydantic-natively
+        settings = Settings.model_validate({**settings.model_dump(), **updates})
 
-                setattr(settings, key_lower, value)
+        # Verify that API keys are set in production
+        if not settings.api_keys:
+            raise ValueError("Production mode requires at least one API key to be configured in api_keys.")
     return settings

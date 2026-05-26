@@ -384,30 +384,15 @@ class GeminiGateway(LLMGateway):
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._last_confidence: float = 0.0
-        self._model: Any = None
+        self._client: Any = None
 
-    def _get_model(self) -> Any:
-        """Lazy-initialize the Gemini GenerativeModel."""
-        if self._model is None:
-            import google.generativeai as genai
+    def _get_client(self) -> Any:
+        """Lazy-initialize the Gemini Client."""
+        if self._client is None:
+            from google import genai
 
-            genai.configure(api_key=self._settings.llm_api_key)  # type: ignore[attr-defined]
-
-            response_schema = _pydantic_to_gemini_schema(ParsedConfiguration)
-
-            generation_config = genai.GenerationConfig(  # type: ignore[attr-defined]
-                response_mime_type="application/json",
-                response_schema=response_schema,
-                temperature=self._settings.llm_temperature,
-                max_output_tokens=self._settings.llm_max_tokens,
-            )
-
-            self._model = genai.GenerativeModel(  # type: ignore[attr-defined]
-                model_name=self._settings.llm_model,
-                generation_config=generation_config,
-                system_instruction=INTENT_SYSTEM_PROMPT,
-            )
-        return self._model
+            self._client = genai.Client(api_key=self._settings.llm_api_key)
+        return self._client
 
     async def parse_intent(
         self,
@@ -415,9 +400,9 @@ class GeminiGateway(LLMGateway):
         context: dict[str, Any] | None = None,
     ) -> ParsedConfiguration:
         """Parse natural language into structured config using Gemini."""
-        import asyncio
+        from google.genai import types
 
-        model = self._get_model()
+        client = self._get_client()
 
         # Build the user message with context if provided
         user_message = f"Developer request: {text}"
@@ -425,11 +410,35 @@ class GeminiGateway(LLMGateway):
             user_message += f"\n\nContext: {json.dumps(context)}"
 
         # Build few-shot conversation turns
-        contents: list[dict[str, Any]] = []
+        contents: list[types.Content] = []
         for example in INTENT_FEW_SHOT_EXAMPLES:
-            contents.append({"role": "user", "parts": [f"Developer request: {example['input']}"]})
-            contents.append({"role": "model", "parts": [json.dumps(example["output"])]})
-        contents.append({"role": "user", "parts": [user_message]})
+            contents.append(
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=f"Developer request: {example['input']}")]
+                )
+            )
+            contents.append(
+                types.Content(
+                    role="model",
+                    parts=[types.Part.from_text(text=json.dumps(example["output"]))]
+                )
+            )
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=user_message)]
+            )
+        )
+
+        response_schema = _pydantic_to_gemini_schema(ParsedConfiguration)
+        generation_config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            temperature=self._settings.llm_temperature,
+            max_output_tokens=self._settings.llm_max_tokens,
+            system_instruction=INTENT_SYSTEM_PROMPT,
+        )
 
         # Retry loop for structured output
         max_retries = 3
@@ -437,8 +446,12 @@ class GeminiGateway(LLMGateway):
 
         for attempt in range(max_retries):
             try:
-                # google-generativeai SDK is synchronous; run in a thread
-                response = await asyncio.to_thread(model.generate_content, contents)
+                # Use native async client.aio call
+                response = await client.aio.models.generate_content(
+                    model=self._settings.llm_model,
+                    contents=contents,
+                    config=generation_config,
+                )
 
                 raw_content = response.text
                 if not raw_content:
@@ -467,13 +480,15 @@ class GeminiGateway(LLMGateway):
                     error=str(e),
                 )
                 # Append self-correction feedback
-                contents.append({
-                    "role": "user",
-                    "parts": [(
-                        f"Your previous response was invalid: {e}. "
-                        "Please try again with valid JSON matching the schema."
-                    )],
-                })
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=(
+                            f"Your previous response was invalid: {e}. "
+                            "Please try again with valid JSON matching the schema."
+                        ))]
+                    )
+                )
                 continue
             except Exception as e:
                 last_error = e

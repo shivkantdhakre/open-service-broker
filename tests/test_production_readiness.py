@@ -49,6 +49,8 @@ def test_settings_override_in_production():
 
             assert settings.production_mode is True
             assert settings.aws_endpoint_url is None
+            assert settings.aws_access_key_id is None
+            assert settings.aws_secret_access_key is None
             assert settings.llm_api_key == "prod-llm-key"
             assert settings.api_keys == {"sk-prod-1": "prod-user"}
             assert settings.app_port == 8888
@@ -56,6 +58,23 @@ def test_settings_override_in_production():
             mock_retrieve.assert_called_once_with("my-prod-secret", "us-east-1")
 
         # Clean cache after test
+        get_settings.cache_clear()
+
+
+def test_settings_raises_error_when_api_keys_empty_in_production():
+    """Verify that get_settings raises an error when api_keys is empty in production."""
+    # Secrets with empty API keys
+    test_secrets = {
+        "LLM_API_KEY": "prod-llm-key",
+        "API_KEYS": "{}",
+    }
+
+    with patch("broker.config.retrieve_secrets_from_manager", return_value=test_secrets):
+        get_settings.cache_clear()
+        with patch.dict("os.environ", {"PRODUCTION_MODE": "True", "AWS_SECRET_NAME": "my-prod-secret"}):
+            import pytest
+            with pytest.raises(ValueError, match="Production mode requires at least one API key"):
+                get_settings()
         get_settings.cache_clear()
 
 

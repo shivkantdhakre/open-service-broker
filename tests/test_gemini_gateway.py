@@ -5,7 +5,7 @@ Tests for the Gemini LLM Gateway and its schema sanitization pipeline.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -109,28 +109,26 @@ def test_pydantic_to_gemini_schema():
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_gemini_gateway_lazy_initialization():
     """Test that GeminiGateway lazily configures genai and creates the model."""
     settings = Settings(
         llm_provider="gemini",
         llm_api_key="mock-api-key-123",
-        llm_model="gemini-1.5-flash",
+        llm_model="gemini-3.5-flash",
         llm_temperature=0.2,
         llm_max_tokens=2048,
     )
 
     gateway = GeminiGateway(settings)
-    assert gateway._model is None
+    assert gateway._client is None
 
-    with patch("google.generativeai.configure") as mock_configure, \
-         patch("google.generativeai.GenerativeModel") as mock_generative_model:
+    with patch("google.genai.Client") as mock_client_cls:
+        client = gateway._get_client()
 
-        model = gateway._get_model()
-
-        mock_configure.assert_called_once_with(api_key="mock-api-key-123")
-        mock_generative_model.assert_called_once()
-        assert gateway._model is not None
-        assert model == gateway._model
+        mock_client_cls.assert_called_once_with(api_key="mock-api-key-123")
+        assert gateway._client is not None
+        assert client == gateway._client
 
 
 @pytest.mark.asyncio
@@ -139,12 +137,12 @@ async def test_gemini_gateway_parse_intent_success():
     settings = Settings(
         llm_provider="gemini",
         llm_api_key="mock-api-key",
-        llm_model="gemini-1.5-flash",
+        llm_model="gemini-3.5-flash",
     )
 
     gateway = GeminiGateway(settings)
 
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     mock_response = MagicMock()
     # Mocking Gemini response containing JSON matching ParsedConfiguration
     mock_response.text = json.dumps({
@@ -157,8 +155,9 @@ async def test_gemini_gateway_parse_intent_success():
         },
         "reasoning": "Creating route for user-service as requested."
     })
-    mock_model.generate_content.return_value = mock_response
-    gateway._model = mock_model
+    mock_generate_content = AsyncMock(return_value=mock_response)
+    mock_client.aio.models.generate_content = mock_generate_content
+    gateway._client = mock_client
 
     result = await gateway.parse_intent("Create a route for user-service to cluster user-cluster")
 
@@ -178,12 +177,12 @@ async def test_gemini_gateway_parse_intent_retry_logic():
     settings = Settings(
         llm_provider="gemini",
         llm_api_key="mock-api-key",
-        llm_model="gemini-1.5-flash",
+        llm_model="gemini-3.5-flash",
     )
 
     gateway = GeminiGateway(settings)
 
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     # First response: invalid JSON
     # Second response: valid JSON but invalid schema (missing target_service)
     # Third response: fully valid JSON
@@ -206,12 +205,13 @@ async def test_gemini_gateway_parse_intent_retry_logic():
         "reasoning": "Success on third try."
     })
 
-    mock_model.generate_content.side_effect = [mock_resp1, mock_resp2, mock_resp3]
-    gateway._model = mock_model
+    mock_generate_content = AsyncMock(side_effect=[mock_resp1, mock_resp2, mock_resp3])
+    mock_client.aio.models.generate_content = mock_generate_content
+    gateway._client = mock_client
 
     result = await gateway.parse_intent("some request")
     assert result.target_service == "auth-service"
-    assert mock_model.generate_content.call_count == 3
+    assert mock_generate_content.call_count == 3
 
 
 def test_factory_resolves_gemini():
@@ -219,7 +219,7 @@ def test_factory_resolves_gemini():
     settings = Settings(
         llm_provider="gemini",
         llm_api_key="mock-api-key",
-        llm_model="gemini-1.5-flash",
+        llm_model="gemini-3.5-flash",
     )
 
     gateway = create_llm_gateway(settings)
