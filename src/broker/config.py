@@ -7,7 +7,6 @@ sensible defaults targeting LocalStack for local development.
 
 from __future__ import annotations
 
-import contextlib
 import json
 from functools import lru_cache
 from pathlib import Path
